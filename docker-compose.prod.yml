@@ -1,0 +1,17 @@
+# =============================================================================
+# AEGIS — Production Docker Compose Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# This file overrides the demo docker-compose.yml for production deployment.
+# It changes only model-serving related configs.
+# All other services (PostgreSQL, Qdrant, OpenSearch, Redis, etc.) are identical.
+#
+# Agent populates this file during the IMPL_03 session review.
+# The key changes for production:
+#   - MODEL_BACKEND=vllm (instead of ollama)
+#   - No local Ollama containers (3 removed)
+#   - vLLM endpoint configured via VLLM_BASE_URL env var
+#   - Resource limits adjusted for cloud GPU instance
+# =============================================================================
+
+# Agent creates this file content during IMPL_03

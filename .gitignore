@@ -1,0 +1,94 @@
+# =============================================================================
+# AEGIS — Git Ignore
+# =============================================================================
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# CRITICAL: NEVER commit environment files with real credentials
+.env
+.env.prod
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+frontend/.env.local
+
+# Keep the example templates — these are safe to commit
+!.env.example
+!.env.prod.example
+!frontend/.env.local.example
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Docker volume data (large, machine-specific, never commit)
+postgres_data/
+qdrant_storage/
+opensearch_data/
+redis_data/
+minio_data/
+grafana_data/
+prometheus_data/
+keycloak_data/
+vault_data/
+
+# Model weights (gigabytes, never commit)
+*.gguf
+*.ggml
+*.bin
+models/
+
+# SSL certificates (never commit private keys)
+*.pem
+*.crt
+*.key
+*.p12
+backend/app/certs/
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Alembic cache only (migration py files are committed)
+alembic/__pycache__/
+
+# Test artifacts
+.coverage
+htmlcov/
+coverage.xml
+
+# Temporary files
+tmp/
+temp/
+*.tmp

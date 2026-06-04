@@ -1,0 +1,32 @@
+# EditorConfig: https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Python files — PEP8 uses 4 spaces
+[*.py]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# TypeScript, JavaScript, JSON, CSS — 2 spaces is Next.js/Node convention
+[*.{ts,tsx,js,jsx,json,css,scss,yaml,yml,toml,html}]
+indent_style = space
+indent_size = 2
+
+# Markdown — preserve trailing spaces (they create line breaks)
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefile — tabs are required (make fails with spaces)
+[Makefile]
+indent_style = tab
+
+# Shell scripts — 2 spaces
+[*.sh]
+indent_style = space
+indent_size = 2
