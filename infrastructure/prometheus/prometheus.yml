@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: 'aegis-fastapi'
+    static_configs:
+      - targets: ['aegis-fastapi:8000']
+    metrics_path: '/metrics'
+
+  - job_name: 'aegis-bge'
+    static_configs:
+      - targets: ['aegis-bge:8002']
+    metrics_path: '/metrics'
+
+  - job_name: 'aegis-deberta'
+    static_configs:
+      - targets: ['aegis-deberta:8001']
+    metrics_path: '/metrics'
+
+  - job_name: 'aegis-qdrant'
+    static_configs:
+      - targets: ['aegis-qdrant:6333']
+    metrics_path: '/metrics'
+
+  - job_name: 'aegis-redis-session'
+    static_configs:
+      - targets: ['aegis-redis-session:6379']
+
+  - job_name: 'aegis-redis-queue'
+    static_configs:
+      - targets: ['aegis-redis-queue:6379']

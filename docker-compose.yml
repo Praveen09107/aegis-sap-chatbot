@@ -1,0 +1,576 @@
+# AEGIS Docker Compose — Complete Infrastructure
+# Version: 1.0 | All 19 services
+
+networks:
+  nexus-public:
+    driver: bridge
+    name: nexus-public
+  nexus-app:
+    driver: bridge
+    name: nexus-app
+  nexus-ai:
+    driver: bridge
+    name: nexus-ai
+  nexus-data:
+    driver: bridge
+    name: nexus-data
+  nexus-obs:
+    driver: bridge
+    name: nexus-obs
+
+volumes:
+  aegis-vault-data:
+    name: aegis-vault-data
+  aegis-postgres-data:
+    name: aegis-postgres-data
+  aegis-postgres-replica-data:
+    name: aegis-postgres-replica-data
+  aegis-qdrant-data:
+    name: aegis-qdrant-data
+  aegis-opensearch-data:
+    name: aegis-opensearch-data
+  aegis-redis-session-data:
+    name: aegis-redis-session-data
+  aegis-redis-queue-data:
+    name: aegis-redis-queue-data
+  aegis-backup-data:
+    name: aegis-backup-data
+  aegis-tmp-uploads:
+    name: aegis-tmp-uploads
+
+services:
+
+  # ============================================================
+  # LAYER 1: Core Infrastructure (start first, no dependencies)
+  # ============================================================
+
+  aegis-vault:
+    image: hashicorp/vault:1.18.1
+    container_name: aegis-vault
+    hostname: aegis-vault
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: aegis-dev-root-token
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_ADDR: "http://0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - aegis-vault-data:/vault/data
+    networks:
+      - nexus-app
+      - nexus-data
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  aegis-redis-session:
+    image: redis:7.4-alpine
+    container_name: aegis-redis-session
+    hostname: aegis-redis-session
+    command: >
+      redis-server
+      --maxmemory 6gb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+      --save ""
+      --loglevel warning
+    volumes:
+      - aegis-redis-session-data:/data
+    networks:
+      - nexus-data
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  aegis-redis-queue:
+    image: redis:7.4-alpine
+    container_name: aegis-redis-queue
+    hostname: aegis-redis-queue
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy noeviction
+      --appendonly yes
+      --appendfsync everysec
+      --loglevel warning
+    volumes:
+      - aegis-redis-queue-data:/data
+    networks:
+      - nexus-data
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # LAYER 2: Databases (depend on Layer 1)
+  # ============================================================
+
+  aegis-postgres-primary:
+    image: postgres:16.4-alpine
+    container_name: aegis-postgres-primary
+    hostname: aegis-postgres-primary
+    environment:
+      POSTGRES_DB: aegis
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-aegis_admin_dev_2024}
+    command: >
+      postgres
+      -c wal_level=replica
+      -c hot_standby=on
+      -c max_wal_senders=3
+      -c max_replication_slots=3
+      -c wal_keep_size=1GB
+      -c synchronous_commit=on
+    volumes:
+      - aegis-postgres-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+      - aegis-backup-data:/backups
+    networks:
+      - nexus-data
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aegis"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  aegis-postgres-replica:
+    image: postgres:16.4-alpine
+    container_name: aegis-postgres-replica
+    hostname: aegis-postgres-replica
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_MASTER_HOST: aegis-postgres-primary
+      POSTGRES_MASTER_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-aegis_admin_dev_2024}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+          echo "Setting up replica from primary..."
+          until pg_isready -h aegis-postgres-primary -U postgres; do sleep 2; done
+          pg_basebackup -h aegis-postgres-primary -U postgres -D /var/lib/postgresql/data -Fp -Xs -P -R
+          echo "Replica setup complete"
+        fi
+        exec docker-entrypoint.sh postgres -c hot_standby=on
+    volumes:
+      - aegis-postgres-replica-data:/var/lib/postgresql/data
+    networks:
+      - nexus-data
+      - nexus-obs
+    depends_on:
+      aegis-postgres-primary:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  aegis-qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: aegis-qdrant
+    hostname: aegis-qdrant
+    volumes:
+      - aegis-qdrant-data:/qdrant/storage
+    networks:
+      - nexus-data
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  aegis-opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    container_name: aegis-opensearch
+    hostname: aegis-opensearch
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: "-Xms2g -Xmx2g"
+      plugins.security.disabled: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 4g
+    volumes:
+      - aegis-opensearch-data:/usr/share/opensearch/data
+    networks:
+      - nexus-data
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ============================================================
+  # LAYER 3: Application Tier Services (depend on Layer 2)
+  # ============================================================
+
+  aegis-pgbouncer:
+    image: pgbouncer/pgbouncer:latest
+    container_name: aegis-pgbouncer
+    hostname: aegis-pgbouncer
+    environment:
+      DATABASES_HOST: aegis-postgres-primary
+      DATABASES_PORT: "5432"
+      DATABASES_USER: postgres
+      DATABASES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-aegis_admin_dev_2024}
+      DATABASES_DBNAME: aegis
+      DATABASES_POOL_SIZE: "20"
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: "100"
+      PGBOUNCER_DEFAULT_POOL_SIZE: "20"
+      PGBOUNCER_MIN_POOL_SIZE: "5"
+      PGBOUNCER_RESERVE_POOL_SIZE: "5"
+      PGBOUNCER_RESERVE_POOL_TIMEOUT: "5"
+      PGBOUNCER_SERVER_IDLE_TIMEOUT: "600"
+      PGBOUNCER_AUTH_TYPE: any
+      PGBOUNCER_LOG_CONNECTIONS: "0"
+      PGBOUNCER_LOG_DISCONNECTIONS: "0"
+      PGBOUNCER_LOG_POOLER_ERRORS: "1"
+      PGBOUNCER_STATS_PERIOD: "60"
+      PGBOUNCER_LISTEN_PORT: "6432"
+    networks:
+      - nexus-data
+      - nexus-obs
+    depends_on:
+      aegis-postgres-primary:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 6432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  aegis-keycloak:
+    image: quay.io/keycloak/keycloak:26.0.5
+    container_name: aegis-keycloak
+    hostname: aegis-keycloak
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://aegis-postgres-primary:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-aegis_admin_dev_2024}
+      KC_DB_SCHEMA: public
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      KC_METRICS_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-keycloak_admin_dev_2024}
+    networks:
+      - nexus-app
+      - nexus-obs
+    depends_on:
+      aegis-postgres-primary:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080'"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+
+  # ============================================================
+  # LAYER 4: AI Inference Services (depend on Layer 3)
+  # ============================================================
+
+  aegis-bge:
+    build:
+      context: ./services/bge-embedding
+      dockerfile: Dockerfile
+    container_name: aegis-bge
+    hostname: aegis-bge
+    environment:
+      MODEL_NAME: BAAI/bge-base-en-v1.5
+      PORT: "8002"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    networks:
+      - nexus-ai
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8002/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+  aegis-deberta:
+    build:
+      context: ./services/deberta-nli
+      dockerfile: Dockerfile
+    container_name: aegis-deberta
+    hostname: aegis-deberta
+    environment:
+      NLI_MODEL_NAME: cross-encoder/nli-deberta-v3-large
+      RERANKER_MODEL_NAME: cross-encoder/ms-marco-MiniLM-L-12-v2
+      PORT: "8001"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    networks:
+      - nexus-ai
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 300s
+
+  # ============================================================
+  # LAYER 5: Ollama Model Servers (depend on Layer 4)
+  # PATCHED: bind mount /home/pal/.ollama instead of named volume
+  # ============================================================
+
+  aegis-ollama-main:
+    image: ollama/ollama:0.4.1
+    container_name: aegis-ollama-main
+    hostname: aegis-ollama-main
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_NUM_THREAD: "10"
+    volumes:
+      - /home/pal/.ollama:/root/.ollama
+    networks:
+      - nexus-ai
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/11434'"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  aegis-ollama-judge:
+    image: ollama/ollama:0.4.1
+    container_name: aegis-ollama-judge
+    hostname: aegis-ollama-judge
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_NUM_THREAD: "3"
+    volumes:
+      - /home/pal/.ollama:/root/.ollama
+    networks:
+      - nexus-ai
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/11434'"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  aegis-ollama-vision:
+    image: ollama/ollama:0.4.1
+    container_name: aegis-ollama-vision
+    hostname: aegis-ollama-vision
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_NUM_THREAD: "3"
+    volumes:
+      - /home/pal/.ollama:/root/.ollama
+    networks:
+      - nexus-ai
+      - nexus-obs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/11434'"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+
+  # ============================================================
+  # LAYER 6: Application Services (depend on Layer 5)
+  # ============================================================
+
+  aegis-fastapi:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aegis-fastapi
+    hostname: aegis-fastapi
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    env_file:
+      - .env
+    volumes:
+      - aegis-tmp-uploads:/tmp/aegis_uploads
+    networks:
+      - nexus-app
+      - nexus-ai
+      - nexus-data
+      - nexus-obs
+    depends_on:
+      aegis-vault:
+        condition: service_healthy
+      aegis-redis-session:
+        condition: service_healthy
+      aegis-redis-queue:
+        condition: service_healthy
+      aegis-pgbouncer:
+        condition: service_healthy
+      aegis-qdrant:
+        condition: service_healthy
+      aegis-opensearch:
+        condition: service_healthy
+      aegis-keycloak:
+        condition: service_healthy
+      aegis-bge:
+        condition: service_healthy
+      aegis-deberta:
+        condition: service_healthy
+      aegis-ollama-main:
+        condition: service_healthy
+      aegis-ollama-judge:
+        condition: service_healthy
+      aegis-ollama-vision:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  aegis-arq:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aegis-arq
+    hostname: aegis-arq
+    command: python -m arq app.workers.arq_worker.WorkerSettings
+    env_file:
+      - .env
+    volumes:
+      - aegis-tmp-uploads:/tmp/aegis_uploads
+    networks:
+      - nexus-app
+      - nexus-ai
+      - nexus-data
+      - nexus-obs
+    depends_on:
+      aegis-vault:
+        condition: service_healthy
+      aegis-redis-queue:
+        condition: service_healthy
+      aegis-pgbouncer:
+        condition: service_healthy
+      aegis-qdrant:
+        condition: service_healthy
+      aegis-ollama-vision:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ============================================================
+  # LAYER 7: Edge (depends on Layer 6 — last to start)
+  # ============================================================
+
+  aegis-nginx:
+    image: nginx:1.27-alpine
+    container_name: aegis-nginx
+    hostname: aegis-nginx
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - nexus-public
+      - nexus-app
+      - nexus-obs
+    depends_on:
+      aegis-fastapi:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================
+  # OBSERVABILITY (start alongside Layer 2, no functional deps)
+  # ============================================================
+
+  aegis-prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: aegis-prometheus
+    hostname: aegis-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=15d'
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - nexus-obs
+    restart: unless-stopped
+
+  aegis-grafana:
+    image: grafana/grafana:11.3.1
+    container_name: aegis-grafana
+    hostname: aegis-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-grafana_admin_dev}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - nexus-obs
+    depends_on:
+      - aegis-prometheus
+    restart: unless-stopped
