@@ -1,57 +1,39 @@
-# AEGIS — SAP Helpdesk AI
-## Adaptive Enterprise Grade Intelligence System | Sona Comstar, Chennai
+# AEGIS — Adaptive Enterprise Grade Intelligence System
+## Sona Comstar SAP Helpdesk AI Platform
 
-AEGIS is an enterprise-grade AI assistant that answers SAP helpdesk questions
-by retrieving information from internal SAP documentation and generating
-validated, source-cited answers.
+## Quick Start
 
----
+### Prerequisites
+- Python 3.11+
+- Node.js 20+
+- Docker with Docker Compose plugin
+- OpenSSL
 
-## Quick Start (after initial setup)
-
+### First-Time Setup
 ```bash
-make up          # start all 19 Docker services
-make status      # verify all services healthy
-make logs        # follow application logs
+# 1. Install Python dependencies
+cd backend && python3 -m venv venv && source venv/bin/activate
+pip install torch==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt && cd ..
+
+# 2. Install frontend dependencies
+cd frontend && npm install && cd ..
+
+# 3. Start all services
+docker compose up -d
+
+# 4. Check system health
+python scripts/verify_health.py
 ```
 
-Access:
-- Employee Chat: http://localhost:3000
-- Admin Portal: http://localhost:3000/admin
-- Grafana: http://localhost:3001
+### Architecture
+AEGIS is a six-zone enterprise AI platform with zero-trust security,
+adaptive tri-modal retrieval, and three-tier answer validation.
+See specs/ directory for complete architecture documentation.
 
----
-
-## First Time Setup
-
-See `docs/ONBOARDING.md` for complete setup instructions.
-
-Short version:
-1. Install prerequisites (WSL2, Docker Desktop, Ollama, Node.js)
-2. `cp .env.example .env` and fill in values
-3. Download Ollama models: `ollama pull qwen2.5:32b` (+ 2 more)
-4. `make up && make init`
-5. `python scripts/setup_keycloak.py && python scripts/setup_models.py`
-
----
-
-## Architecture
-
-See `docs/ARCHITECTURE.md` for the full system design.
-
-19 Docker services across 6 zones (Security, Orchestration, AI Pipeline,
-Presentation, Data Layer, Observability). Demo runs on CPU with Qwen2.5-32B.
-Production migrates to private cloud GPU with Qwen2.5-72B — one env var change.
-
----
-
-## Implementation Progress
-
-Session status tracked in `specs/tier2_implementation/` (IMPL_01–29) and
-`specs/tier4_frontend/` (FRONTEND_01–40).
-
----
-
-## For Developers
-
-See `CONTRIBUTING.md` for branch naming, commit format, and PR process.
+### Specifications
+All architecture and implementation specifications are in the specs/ directory.
+- specs/tier0_agent_guide/ — Implementation guide for AI-assisted development
+- specs/tier1_foundation/ — Core architecture reference documents
+- specs/tier2_implementation/ — Step-by-step implementation guides
+- specs/tier3_verification/ — Testing and compliance verification
