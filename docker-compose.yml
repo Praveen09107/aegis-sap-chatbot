@@ -361,7 +361,7 @@ services:
 
   # ============================================================
   # LAYER 5: Ollama Model Servers (depend on Layer 4)
-  # PATCHED: bind mount /home/pal/.ollama instead of named volume
+  # PATCHED: bind mount /usr/share/ollama/.ollama (actual host model storage)
   # ============================================================
 
   aegis-ollama-main:
@@ -372,7 +372,7 @@ services:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_THREAD: "10"
     volumes:
-      - /home/pal/.ollama:/root/.ollama
+      - /usr/share/ollama/.ollama:/root/.ollama
     networks:
       - nexus-ai
       - nexus-obs
@@ -392,7 +392,7 @@ services:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_THREAD: "3"
     volumes:
-      - /home/pal/.ollama:/root/.ollama
+      - /usr/share/ollama/.ollama:/root/.ollama
     networks:
       - nexus-ai
       - nexus-obs
@@ -412,7 +412,7 @@ services:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_THREAD: "3"
     volumes:
-      - /home/pal/.ollama:/root/.ollama
+      - /usr/share/ollama/.ollama:/root/.ollama
     networks:
       - nexus-ai
       - nexus-obs
