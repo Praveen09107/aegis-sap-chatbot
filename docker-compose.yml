@@ -365,7 +365,7 @@ services:
   # ============================================================
 
   aegis-ollama-main:
-    image: ollama/ollama:0.4.1
+    image: ollama/ollama:latest
     container_name: aegis-ollama-main
     hostname: aegis-ollama-main
     environment:
@@ -385,7 +385,7 @@ services:
       start_period: 30s
 
   aegis-ollama-judge:
-    image: ollama/ollama:0.4.1
+    image: ollama/ollama:latest
     container_name: aegis-ollama-judge
     hostname: aegis-ollama-judge
     environment:
@@ -405,7 +405,7 @@ services:
       start_period: 30s
 
   aegis-ollama-vision:
-    image: ollama/ollama:0.4.1
+    image: ollama/ollama:latest
     container_name: aegis-ollama-vision
     hostname: aegis-ollama-vision
     environment:
