@@ -69,4 +69,14 @@ UVICORN_WORKERS = int(os.getenv("UVICORN_WORKERS", "2"))
 # mTLS toggle (from IMPL_09 locked decisions)
 MTLS_ENABLED = os.getenv("MTLS_ENABLED", "false").lower() == "true"
 
+# Keycloak (from IMPL_10 — Identity)
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://aegis-keycloak:8080")
+KEYCLOAK_ISSUER_URL = os.getenv("KEYCLOAK_ISSUER_URL", "http://localhost:8180")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "aegis-realm")
+KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "aegis-chat")
+
+# Vault (from IMPL_10 — Secrets)
+VAULT_URL = os.getenv("VAULT_URL", "http://aegis-vault:8200")
+VAULT_TOKEN = os.getenv("VAULT_TOKEN", "aegis-dev-root-token")
+
 # Note: Full implementation added in Session 02

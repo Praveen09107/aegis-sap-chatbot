@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import ENVIRONMENT, LOG_LEVEL
 from app.middleware.trace_id import TraceIDMiddleware
+from app.middleware.authentication import AuthenticationMiddleware
 from app.middleware.input_governance import InputGovernanceMiddleware
 from app.middleware.rate_limiting import RateLimitingMiddleware
 
@@ -37,6 +38,9 @@ async def lifespan(app: FastAPI):
     await redis_queue.connect()
     await qdrant_client.connect()
     await opensearch_client.connect()
+
+    from app.middleware.authentication import load_keycloak_public_keys
+    await load_keycloak_public_keys()
 
     logger.info("AEGIS ready (environment: %s)", ENVIRONMENT)
     yield
@@ -63,7 +67,7 @@ app = FastAPI(
 
 app.add_middleware(RateLimitingMiddleware)
 app.add_middleware(InputGovernanceMiddleware)
-# NOTE: AuthenticationMiddleware added in Session 10 after Keycloak is configured
+app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(TraceIDMiddleware)
 
 app.add_middleware(
