@@ -93,11 +93,28 @@ async def _handle_client_message(
         if screenshot_path:
             await _queue_vision_task(session_id, screenshot_path)
 
-        await websocket.send_json({
-            "type": "token",
-            "token": "[Pipeline being implemented in Sessions 12-17] ",
-            "session_id": session_id,
-        })
+        trace_id = str(uuid.uuid4())
+
+        from app.services.query_intelligence import query_intelligence
+        enriched = await query_intelligence.process(
+            raw_message=query_text,
+            session=session,
+            session_id=session_id,
+            trace_id=trace_id,
+        )
+
+        if enriched.cache_hit and enriched.cached_answer:
+            await websocket.send_json({
+                "type": "token",
+                "token": enriched.cached_answer,
+                "session_id": session_id,
+            })
+        else:
+            await websocket.send_json({
+                "type": "token",
+                "token": f"[QIL complete — mode={enriched.retrieval_mode}, class={enriched.classification}. Retrieval stages 14-17 pending] ",
+                "session_id": session_id,
+            })
         await websocket.send_json({
             "type": "stream_complete",
             "session_id": session_id,
