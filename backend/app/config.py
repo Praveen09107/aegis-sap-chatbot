@@ -24,4 +24,22 @@ REDIS_QUEUE_URL = os.getenv("REDIS_QUEUE_URL", "redis://localhost:6380/0")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 
+# Qdrant collection names
+QDRANT_COLLECTION_ERRORS = "meridian_errors"
+QDRANT_COLLECTION_PROCEDURES = "meridian_procedures"
+QDRANT_COLLECTION_CONFIGS = "meridian_configs"
+QDRANT_COLLECTION_CACHE = "cache_queries"
+
+# Named vector names within content collections
+QDRANT_VECTOR_CONTENT = "content"
+QDRANT_VECTOR_IDENTITY = "identity"
+
+# HNSW search parameters
+QDRANT_HNSW_EF = 128
+QDRANT_CACHE_HNSW_EF = 64
+QDRANT_SEARCH_LIMIT = 10
+
+# Semantic cache similarity threshold
+SEMANTIC_CACHE_THRESHOLD = 0.88
+
 # Note: Full implementation added in Session 02

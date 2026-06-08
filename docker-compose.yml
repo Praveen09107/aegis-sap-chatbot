@@ -192,6 +192,8 @@ services:
     hostname: aegis-qdrant
     volumes:
       - aegis-qdrant-data:/qdrant/storage
+    ports:
+      - "6333:6333"
     networks:
       - nexus-data
       - nexus-obs
