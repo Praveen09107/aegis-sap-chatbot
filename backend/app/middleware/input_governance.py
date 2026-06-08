@@ -39,7 +39,7 @@ MAX_MAGIC_BYTES_TO_READ = 12
 # ============================================================
 INJECTION_PATTERNS = [
     re.compile(r"(ignore|disregard|forget|bypass|override)\s+(previous|above|prior|your)\s+(instructions?|rules?|context|system|prompt)", re.IGNORECASE),
-    re.compile(r"(repeat|echo|print|show|reveal|tell\s+me|give\s+me)\s+(your\s+)?(system\s+prompt|instructions?|rules?|prompt\s+above)", re.IGNORECASE),
+    re.compile(r"(repeat|echo|print|show|reveal|tell\s+me|give\s+me)\s+(\w+\s+)?(your\s+)?(system\s+prompt|instructions?|rules?|prompt\s+above)", re.IGNORECASE),
     re.compile(r"what\s+are\s+your\s+(instructions?|rules?|system\s+prompt)", re.IGNORECASE),
     re.compile(r"(output|print|display)\s+your\s+(full\s+)?(prompt|instructions?|context)", re.IGNORECASE),
     re.compile(r"(act\s+as|pretend\s+(to\s+be|you\s+are)|you\s+are\s+now|from\s+now\s+on)\s+.{0,50}(different|unrestricted|uncensored|jailbreak|DAN)", re.IGNORECASE),
