@@ -58,6 +58,15 @@ ACCESS_TOKEN_TTL_SECONDS = 900
 
 # Rate limiting (from AEGIS_CONFIGURATION_CONSTANTS.md Section 11)
 RATE_LIMIT_REQUESTS_PER_MINUTE = 60
+RATE_LIMIT_BURST_CAPACITY = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
+
+# FastAPI (from AEGIS_CONFIGURATION_CONSTANTS.md Section 18)
+FASTAPI_HOST = os.getenv("FASTAPI_HOST", "0.0.0.0")
+FASTAPI_PORT = int(os.getenv("FASTAPI_PORT", "8000"))
+UVICORN_WORKERS = int(os.getenv("UVICORN_WORKERS", "2"))
+
+# mTLS toggle (from IMPL_09 locked decisions)
+MTLS_ENABLED = os.getenv("MTLS_ENABLED", "false").lower() == "true"
 
 # Note: Full implementation added in Session 02
