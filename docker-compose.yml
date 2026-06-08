@@ -225,6 +225,8 @@ services:
     mem_limit: 4g
     volumes:
       - aegis-opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
     networks:
       - nexus-data
       - nexus-obs

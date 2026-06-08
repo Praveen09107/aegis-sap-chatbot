@@ -42,4 +42,13 @@ QDRANT_SEARCH_LIMIT = 10
 # Semantic cache similarity threshold
 SEMANTIC_CACHE_THRESHOLD = 0.88
 
+# OpenSearch
+OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "localhost")
+OPENSEARCH_PORT = int(os.getenv("OPENSEARCH_PORT", "9200"))
+OPENSEARCH_INDEX_NAME = "sap_documents"
+OPENSEARCH_SEARCH_LIMIT = 10
+
+# Ingestion pipeline
+ENTITY_BOOST_REPETITIONS = 3
+
 # Note: Full implementation added in Session 02
