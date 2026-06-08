@@ -79,4 +79,48 @@ KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "aegis-chat")
 VAULT_URL = os.getenv("VAULT_URL", "http://aegis-vault:8200")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "aegis-dev-root-token")
 
+# Ollama model endpoints (from AEGIS_CONFIGURATION_CONSTANTS.md Section 29)
+OLLAMA_MAIN_URL = os.getenv("OLLAMA_MAIN_URL", "http://aegis-ollama-main:11434")
+OLLAMA_JUDGE_URL = os.getenv("OLLAMA_JUDGE_URL", "http://aegis-ollama-judge:11434")
+OLLAMA_VISION_URL = os.getenv("OLLAMA_VISION_URL", "http://aegis-ollama-vision:11434")
+
+# AI model identifiers (from AEGIS_CONFIGURATION_CONSTANTS.md Section 5)
+MODEL_MAIN = os.getenv("OLLAMA_MODEL_MAIN", "qwen2.5:32b-instruct-q4_K_M")
+MODEL_JUDGE = os.getenv("OLLAMA_MODEL_JUDGE", "qwen2.5:7b-instruct-q4_K_M")
+MODEL_VISION = os.getenv("OLLAMA_MODEL_VISION", "qwen2.5vl:7b-instruct-q4_K_M")
+EMBEDDING_MODEL_VERSION = "bge-base-en-v1.5"
+
+# BGE and DeBERTa service URLs
+BGE_SERVICE_URL = os.getenv("BGE_SERVICE_URL", "http://aegis-bge:8002")
+DEBERTA_SERVICE_URL = os.getenv("DEBERTA_SERVICE_URL", "http://aegis-deberta:8001")
+
+# Circuit breaker (from AEGIS_CONFIGURATION_CONSTANTS.md Section 10)
+CIRCUIT_BREAKER_WINDOW = 10
+CIRCUIT_BREAKER_FAIL_THRESHOLD = 0.50
+CIRCUIT_BREAKER_COOLDOWN = 30
+
+# Conversation state (from AEGIS_CONFIGURATION_CONSTANTS.md Section 13)
+MAX_CONVERSATION_HISTORY_TURNS = 3
+QUERY_SUMMARY_MAX_CHARS = 200
+ANSWER_SUMMARY_MAX_CHARS = 300
+ESCALATION_UNRESOLVED_THRESHOLD = 3
+
+# Feedback diagnosis (from AEGIS_CONFIGURATION_CONSTANTS.md Section 8)
+FEEDBACK_RETRIEVAL_FAIL_THRESHOLD = 0.65
+
+# Timeouts (from AEGIS_CONFIGURATION_CONSTANTS.md Section 10)
+GENERATION_TIMEOUT_SECONDS = 120
+VISION_PROCESSING_TIMEOUT = 180
+WEBSOCKET_INACTIVITY_TIMEOUT = 180
+
+# PostgreSQL direct connection (for ARQ tasks, via PgBouncer)
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "aegis-pgbouncer")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "6432"))
+POSTGRES_DB = os.getenv("POSTGRES_DB", "aegis")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "aegis_admin_dev_2024")
+
+# Temp file uploads
+TEMP_UPLOAD_DIR = "/tmp/aegis_uploads"
+
 # Note: Full implementation added in Session 02

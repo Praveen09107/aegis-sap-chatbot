@@ -55,7 +55,8 @@ vault_data/
 *.gguf
 *.ggml
 *.bin
-models/
+/models/
+!backend/app/models/
 
 # SSL certificates (never commit private keys)
 *.pem

@@ -12,7 +12,7 @@ Middleware execution order (outer to inner = last registered to first registered
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import ENVIRONMENT, LOG_LEVEL
@@ -118,3 +118,31 @@ async def metrics():
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
     )
+
+
+@app.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket, session_id: str = None):
+    from app.handlers.chat_handler import chat_websocket_handler
+    await chat_websocket_handler(websocket, session_id)
+
+
+@app.post("/api/upload/screenshot")
+async def upload_screenshot(request: Request):
+    """Save screenshot to temp dir and return file path."""
+    import os
+    import time
+    from app.config import TEMP_UPLOAD_DIR
+    form = await request.form()
+    file = form.get("screenshot")
+    if not file:
+        return {"error": "No screenshot provided"}
+    session_id = getattr(request.state, "session_id", "unknown")
+    timestamp = int(time.time() * 1000)
+    ext = ".jpg"
+    filename = f"{session_id}_{timestamp}{ext}"
+    filepath = os.path.join(TEMP_UPLOAD_DIR, filename)
+    os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
+    content = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(content)
+    return {"file_path": filepath, "session_id": session_id}
