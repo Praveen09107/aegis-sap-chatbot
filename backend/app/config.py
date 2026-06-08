@@ -42,6 +42,9 @@ QDRANT_SEARCH_LIMIT = 10
 # Semantic cache similarity threshold
 SEMANTIC_CACHE_THRESHOLD = 0.88
 
+# Mode C query length threshold (from AEGIS_CONFIGURATION_CONSTANTS.md Section 7)
+MODE_C_QUERY_LENGTH_THRESHOLD = 200
+
 # OpenSearch
 OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "localhost")
 OPENSEARCH_PORT = int(os.getenv("OPENSEARCH_PORT", "9200"))
