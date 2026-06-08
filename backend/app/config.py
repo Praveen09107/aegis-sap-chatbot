@@ -77,7 +77,7 @@ KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "aegis-chat")
 
 # Vault (from IMPL_10 — Secrets)
 VAULT_URL = os.getenv("VAULT_URL", "http://aegis-vault:8200")
-VAULT_TOKEN = os.getenv("VAULT_TOKEN", "aegis-dev-root-token")
+VAULT_TOKEN = os.getenv("VAULT_TOKEN", "")
 
 # Ollama model endpoints (from AEGIS_CONFIGURATION_CONSTANTS.md Section 29)
 OLLAMA_MAIN_URL = os.getenv("OLLAMA_MAIN_URL", "http://aegis-ollama-main:11434")
@@ -118,7 +118,7 @@ POSTGRES_HOST = os.getenv("POSTGRES_HOST", "aegis-pgbouncer")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "6432"))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "aegis")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "aegis_admin_dev_2024")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
 # Temp file uploads
 TEMP_UPLOAD_DIR = "/tmp/aegis_uploads"
