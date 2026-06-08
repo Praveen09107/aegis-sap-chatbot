@@ -433,4 +433,170 @@ class QueryIntelligenceLayer:
         return min(entities, key=lambda e: priority.get(e.type, 99))
 
 
+# ============================================================
+# PUBLIC COMPATIBILITY API (QueryIntelligenceService)
+# Wraps QueryIntelligenceLayer with convenience methods
+# used by verification checks and external callers.
+# ============================================================
+
+from dataclasses import dataclass, field as dc_field
+
+
+@dataclass
+class SAPEntityResult:
+    """Structured entity extraction result with typed lists."""
+    error_codes: List[str] = dc_field(default_factory=list)
+    t_codes: List[str] = dc_field(default_factory=list)
+    document_numbers: List[str] = dc_field(default_factory=list)
+    modules: List[str] = dc_field(default_factory=list)
+
+
+class QueryIntelligenceService(QueryIntelligenceLayer):
+    """
+    Public API wrapper over QueryIntelligenceLayer.
+    Adds convenience methods for entity extraction, classification,
+    and full query processing with embedding.
+    """
+
+    def extract_sap_entities(self, text: str) -> SAPEntityResult:
+        """Extract SAP entities and return typed lists."""
+        entities = self._extract_entities(text)
+        result = SAPEntityResult()
+        for e in entities:
+            if e.type == "error_code":
+                result.error_codes.append(e.value)
+            elif e.type == "tcode":
+                result.t_codes.append(e.value)
+            elif e.type == "document_number":
+                result.document_numbers.append(e.value)
+            elif e.type == "module":
+                result.modules.append(e.value)
+        return result
+
+    def classify_complexity(self, query: str) -> int:
+        """Classify query complexity tier: 1 (simple) or 2 (complex)."""
+        entities = self._extract_entities(query)
+        if self._is_mode_c(query, entities, query):
+            return 2
+        words = query.split()
+        if len(words) > 15:
+            return 2
+        query_lower = query.lower()
+        question_words = [w for w in ['why', 'how', 'what', 'when', 'where']
+                          if w in query_lower.split()]
+        if len(question_words) >= 2:
+            return 2
+        return 1
+
+    async def process_query(self, query: str, session_context: dict = None) -> EnrichedQuery:
+        """
+        Full query processing with embedding.
+        Convenience method that builds a SessionState from dict context,
+        computes BGE embedding, and returns EnrichedQuery with all fields populated.
+        """
+        import uuid
+
+        session_context = session_context or {}
+        last_entities_raw = session_context.get("last_entities", [])
+        last_entities = [
+            EntityObject(type=e["type"], value=e["value"]) for e in last_entities_raw
+        ]
+        session = SessionState(
+            user_id_hash="process_query_caller",
+            created_at="",
+            last_entities=last_entities,
+        )
+
+        await self._ensure_synonym_map_loaded()
+
+        entities = self._extract_entities(query)
+        context_entity = self._resolve_context(query, entities, session)
+        if context_entity and not entities:
+            entities = [context_entity]
+
+        enriched_text = self._expand_synonyms(query)
+        classification = self._classify_intent(query, entities)
+        complexity_tier = self.classify_complexity(query)
+
+        registry_result, retrieval_mode = await self._assign_mode(
+            query, entities, enriched_text
+        )
+
+        # Compute BGE embedding
+        query_embedding: List[float] = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                embed_resp = await client.post(
+                    f"{BGE_SERVICE_URL}/embed-single",
+                    json={"text": enriched_text},
+                )
+                embed_resp.raise_for_status()
+                query_embedding = embed_resp.json()["embedding"]
+        except Exception as e:
+            logger.warning("bge_embedding_failed_in_process_query", extra={"error": str(e)})
+
+        cache_hit, cached_answer = False, None
+        if query_embedding:
+            try:
+                from app.infrastructure.qdrant_client import qdrant_client as qc
+                cache_result = await qc.search_cache(query_embedding)
+                if cache_result:
+                    cache_hit = True
+                    cached_answer = cache_result["payload"].get("answer_text", "")
+            except Exception:
+                pass
+
+        trace_id = str(uuid.uuid4())
+        return EnrichedQuery(
+            raw_message=query,
+            enriched_text=enriched_text,
+            entities=entities,
+            context_entity=context_entity,
+            retrieval_mode=retrieval_mode,
+            classification=classification,
+            registry_result=registry_result,
+            session_id="",
+            trace_id=trace_id,
+            cache_hit=cache_hit,
+            cached_answer=cached_answer,
+            original_query=query,
+            query_embedding=query_embedding,
+            complexity_tier=complexity_tier,
+        )
+
+    def expand_synonyms(self, text: str) -> str:
+        """Public synonym expansion."""
+        return self._expand_synonyms(text)
+
+    async def determine_mode(
+        self, query: str, error_codes: List[str], t_codes: List[str]
+    ) -> str:
+        """Determine retrieval mode from query and entity lists."""
+        entities: List[EntityObject] = []
+        for code in error_codes:
+            entities.append(EntityObject(type="error_code", value=code))
+        for code in t_codes:
+            entities.append(EntityObject(type="tcode", value=code))
+        _, mode = await self._assign_mode(query, entities, query)
+        return mode
+
+    def resolve_context(self, message: str, session_ctx: dict) -> Optional[dict]:
+        """Resolve context from session context dict."""
+        last_entities_raw = session_ctx.get("last_entities", [])
+        last_entities = [
+            EntityObject(type=e["type"], value=e["value"]) for e in last_entities_raw
+        ]
+        session = SessionState(
+            user_id_hash="context_resolver",
+            created_at="",
+            last_entities=last_entities,
+        )
+        result = self._resolve_context(message, [], session)
+        if result:
+            return {"type": result.type, "value": result.value}
+        return None
+
+
+# Singleton instances
 query_intelligence = QueryIntelligenceLayer()
+query_intelligence_service = QueryIntelligenceService()

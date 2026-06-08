@@ -34,6 +34,9 @@ class EnrichedQuery:
     trace_id: str
     cache_hit: bool = False
     cached_answer: Optional[str] = None
+    original_query: str = ""
+    query_embedding: List[float] = field(default_factory=list)
+    complexity_tier: int = 1
 
 
 @dataclass

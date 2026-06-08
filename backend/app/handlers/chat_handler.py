@@ -109,16 +109,21 @@ async def _handle_client_message(
                 "token": enriched.cached_answer,
                 "session_id": session_id,
             })
-        else:
             await websocket.send_json({
-                "type": "token",
-                "token": f"[QIL complete — mode={enriched.retrieval_mode}, class={enriched.classification}. Retrieval stages 14-17 pending] ",
+                "type": "stream_complete",
                 "session_id": session_id,
             })
+            return
+
+        # Continue to retrieval engine (Sessions 14-17)
         await websocket.send_json({
-            "type": "stream_complete",
+            "type": "token",
+            "token": f"[QIL complete: mode={enriched.retrieval_mode}, "
+                     f"entities={[e.value for e in enriched.entities]}, "
+                     f"classification={enriched.classification}]",
             "session_id": session_id,
         })
+        await websocket.send_json({"type": "stream_complete", "session_id": session_id})
         await websocket.send_json({
             "type": "validation_result",
             "validation_score": 0.90,
