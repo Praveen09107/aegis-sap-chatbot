@@ -30,6 +30,13 @@ class AttributionPanelData(BaseModel):
     confidence_badge: str
 
 
+class ChatResponse(BaseModel):
+    session_id: str
+    answer: str
+    confidence_badge: str
+    attribution: Optional[dict] = None
+
+
 class WebSocketMessage(BaseModel):
     type: str
     message: Optional[str] = None

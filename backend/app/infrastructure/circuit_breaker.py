@@ -38,18 +38,22 @@ class CircuitBreaker:
     Thread-safe for asyncio (single-threaded event loop).
     """
 
-    def __init__(self, service_name: str):
+    def __init__(self, service_name: str, failure_threshold: int = None, timeout: int = None):
         self.service_name = service_name
         self._state = CircuitState.CLOSED
-        self._failure_window: deque = deque(maxlen=CIRCUIT_BREAKER_WINDOW)
+        # Support both direct threshold and window-based config
+        self._failure_threshold = failure_threshold or CIRCUIT_BREAKER_WINDOW
+        self._cooldown = timeout or CIRCUIT_BREAKER_COOLDOWN
+        self._failure_window: deque = deque(maxlen=self._failure_threshold)
         self._opened_at: float = 0.0
         self._total_calls = 0
         self._total_failures = 0
+        self._consecutive_failures = 0
 
     @property
     def state(self) -> CircuitState:
         if self._state == CircuitState.OPEN:
-            if time.monotonic() - self._opened_at >= CIRCUIT_BREAKER_COOLDOWN:
+            if time.monotonic() - self._opened_at >= self._cooldown:
                 self._state = CircuitState.HALF_OPEN
                 logger.info(f"Circuit {self.service_name}: OPEN -> HALF_OPEN (cooldown expired)")
         return self._state
@@ -68,6 +72,7 @@ class CircuitBreaker:
         """Record a successful call. Closes circuit if in HALF_OPEN state."""
         self._total_calls += 1
         self._failure_window.append(False)
+        self._consecutive_failures = 0
         if self._state == CircuitState.HALF_OPEN:
             self._state = CircuitState.CLOSED
             self._opened_at = 0.0
@@ -78,6 +83,7 @@ class CircuitBreaker:
         self._total_calls += 1
         self._total_failures += 1
         self._failure_window.append(True)
+        self._consecutive_failures += 1
 
         if self._state == CircuitState.HALF_OPEN:
             self._state = CircuitState.OPEN
@@ -86,6 +92,16 @@ class CircuitBreaker:
             return
 
         if self._state == CircuitState.CLOSED:
+            # Open circuit if consecutive failures reach threshold
+            if self._consecutive_failures >= self._failure_threshold:
+                self._state = CircuitState.OPEN
+                self._opened_at = time.monotonic()
+                logger.warning(
+                    f"Circuit {self.service_name}: CLOSED -> OPEN "
+                    f"({self._consecutive_failures} consecutive failures >= {self._failure_threshold})"
+                )
+                return
+            # Also check window-based failure rate
             window = list(self._failure_window)
             if len(window) >= CIRCUIT_BREAKER_WINDOW:
                 failure_rate = sum(window) / len(window)
@@ -107,6 +123,20 @@ class CircuitBreaker:
             "total_calls": self._total_calls,
             "total_failures": self._total_failures,
         }
+
+    async def call(self, func):
+        """Execute a callable through the circuit breaker."""
+        if self.is_open:
+            raise Exception(f"Circuit {self.service_name} is OPEN")
+        try:
+            result = func()
+            if hasattr(result, '__anext__') or hasattr(result, '__await__'):
+                result = await result
+            self.record_success()
+            return result
+        except Exception:
+            self.record_failure()
+            raise
 
 
 class CircuitBreakerRegistry:
