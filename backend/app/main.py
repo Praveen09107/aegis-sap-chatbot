@@ -126,23 +126,6 @@ async def websocket_chat(websocket: WebSocket, session_id: str = None):
     await chat_websocket_handler(websocket, session_id)
 
 
-@app.post("/api/upload/screenshot")
-async def upload_screenshot(request: Request):
-    """Save screenshot to temp dir and return file path."""
-    import os
-    import time
-    from app.config import TEMP_UPLOAD_DIR
-    form = await request.form()
-    file = form.get("screenshot")
-    if not file:
-        return {"error": "No screenshot provided"}
-    session_id = getattr(request.state, "session_id", "unknown")
-    timestamp = int(time.time() * 1000)
-    ext = ".jpg"
-    filename = f"{session_id}_{timestamp}{ext}"
-    filepath = os.path.join(TEMP_UPLOAD_DIR, filename)
-    os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
-    content = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(content)
-    return {"file_path": filepath, "session_id": session_id}
+# Register upload routes (IMPL-13)
+from app.handlers.upload_handler import router as upload_router
+app.include_router(upload_router)

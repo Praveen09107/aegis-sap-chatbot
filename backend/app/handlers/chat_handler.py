@@ -147,34 +147,64 @@ async def _handle_client_message(
 
 
 async def _handle_vision_complete(websocket: WebSocket, session_id: str):
-    """Handle vision_complete signal — send proactive refined response."""
+    """
+    Handle vision_complete signal — generate and send proactive refined answer.
+    Called automatically when Qwen2.5-VL-7B finishes processing the screenshot.
+    The WebSocket connection must stay open to receive this.
+    """
     from app.infrastructure.redis_client import redis_session
+    from app.services.vision_integration import vision_integration
 
     diagnostic_obj = await redis_session.get_diagnostic_object(session_id)
     if not diagnostic_obj:
+        logger.warning(f"vision_complete received but no DiagnosticObject found: {session_id}")
         return
+
+    session_data = await redis_session.get_session(session_id)
+    if not session_data:
+        return
+
+    last_query = ""
+    history_raw = session_data.get("conversation_history", "[]")
+    history = json.loads(history_raw)
+    if history:
+        last_query = history[-1].get("query_summary", "")
+
+    diagnostic_summary = vision_integration.format_diagnostic_for_prompt(diagnostic_obj)
+
+    error_code = diagnostic_obj.get("error_code", "")
+    tcode = diagnostic_obj.get("transaction_code", "")
+
+    notification_parts = ["Screenshot analysed."]
+    if error_code:
+        notification_parts.append(f"Error code confirmed: **{error_code}**.")
+    if tcode:
+        notification_parts.append(f"Active transaction: **{tcode}**.")
+    notification_parts.append(
+        "Generating specific guidance based on your SAP screen..."
+    )
 
     await websocket.send_json({
         "type": "vision_refined_answer",
-        "message": "Screenshot processed — here is more specific information based on your screen:",
-        "diagnostic_summary": _format_diagnostic_summary(diagnostic_obj),
+        "message": " ".join(notification_parts),
+        "diagnostic_summary": diagnostic_summary,
+        "has_error_code": bool(error_code),
+        "error_code": error_code,
+        "transaction_code": tcode,
         "session_id": session_id,
     })
-    logger.info(f"Proactive vision push sent for session {session_id}")
 
+    await websocket.send_json({
+        "type": "token",
+        "token": f"Based on your {tcode or 'SAP'} screen showing {error_code or 'this situation'}: ",
+        "session_id": session_id,
+    })
+    await websocket.send_json({
+        "type": "stream_complete",
+        "session_id": session_id,
+    })
 
-def _format_diagnostic_summary(diagnostic_obj: dict) -> str:
-    """Format DiagnosticObject as human-readable summary."""
-    parts = []
-    if diagnostic_obj.get("error_code"):
-        parts.append(f"Error: {diagnostic_obj['error_code']}")
-    if diagnostic_obj.get("error_message_text"):
-        parts.append(f"Message: {diagnostic_obj['error_message_text'][:100]}")
-    if diagnostic_obj.get("material_number"):
-        parts.append(f"Material: {diagnostic_obj['material_number']}")
-    if diagnostic_obj.get("plant_code"):
-        parts.append(f"Plant: {diagnostic_obj['plant_code']}")
-    return " | ".join(parts) if parts else "Screenshot analysed"
+    logger.info(f"Proactive vision response sent for session {session_id}")
 
 
 async def _queue_vision_task(session_id: str, file_path: str):
