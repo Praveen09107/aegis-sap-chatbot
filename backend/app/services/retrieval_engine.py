@@ -1,18 +1,25 @@
 """
-AEGIS Retrieval Engine — Stages 1 through 5
-Gathers, merges, and fuses candidates from multiple retrieval sources.
+AEGIS Retrieval Engine — Stages 1 through 8
+Gathers, merges, fuses, reranks, and validates candidates from multiple retrieval sources.
 
 Stage 1: Dense vector search    — Qdrant "content" vector, top_k=10 per collection
 Stage 2: Identity vector search — Qdrant "identity" vector, entity fingerprint embedding
 Stage 3: BM25 keyword search    — OpenSearch with entity boosting (3x repetition)
 Stage 4: Knowledge Graph        — Single-hop SQL JOIN via document_relationships
 Stage 5: RRF Fusion             — Merge all sources using Reciprocal Rank Fusion (K=60)
+Stage 6: CRAG Self-Reflection   — Assess whether retrieved chunks are sufficient (runs AFTER Stage 7)
+Stage 7: Cross-Encoder Reranking — Score query-chunk pairs, keep top 5
+Stage 8: Parent Header Hydration — Fetch document header if not already in top 5
 
-Stages 6-8 (CRAG, Reranking, Hydration) added in Session 15.
+Pipeline execution order: 1 → 2+3 (parallel) → 4 → 5 → 7 → 6 → 8
+Stage 7 runs before Stage 6 because CRAG skip logic needs the top cross-encoder score.
 """
+import json
 import logging
 import asyncio
-from typing import List, Optional, Dict, Set
+import uuid
+from datetime import datetime
+from typing import List, Optional, Dict, Set, Tuple
 from collections import defaultdict
 
 import asyncpg
@@ -476,19 +483,266 @@ class RetrievalEngine:
         return boosted
 
     # ============================================================
-    # ORCHESTRATION (stages 6-8 added in Session 15)
+    # STAGE 6: CRAG SELF-REFLECTION
+    # Must run AFTER Stage 7 (cross-encoder) to know the top score.
+    # ============================================================
+
+    async def _stage6_crag(
+        self,
+        enriched_query: EnrichedQuery,
+        chunks: List[RetrievedChunk],
+        top_cross_encoder_score: float,
+    ) -> Tuple[str, Optional[str]]:
+        """
+        CRAG self-reflection: assess whether retrieved chunks are sufficient.
+
+        Skip conditions:
+          Mode A AND score > CRAG_SKIP_THRESHOLD_MODE_A (0.82) → SKIP
+          Mode B AND score > CRAG_SKIP_THRESHOLD_MODE_B (0.80) → SKIP
+          Mode C → ALWAYS run (never skip regardless of score)
+
+        Returns (assessment, gap_description):
+          assessment: "SUFFICIENT" | "INSUFFICIENT" | "SKIPPED"
+          gap_description: populated only when INSUFFICIENT, else None
+        """
+        from app.config import (
+            CRAG_SKIP_THRESHOLD_MODE_A,
+            CRAG_SKIP_THRESHOLD_MODE_B,
+            OLLAMA_JUDGE_URL,
+            MODEL_JUDGE_CRAG,
+            CRAG_MAX_TOKENS,
+            JUDGE_TEMPERATURE,
+        )
+
+        mode = enriched_query.retrieval_mode
+
+        if mode == "A" and top_cross_encoder_score > CRAG_SKIP_THRESHOLD_MODE_A:
+            logger.debug(
+                f"CRAG SKIP: Mode A, score {top_cross_encoder_score:.4f} > {CRAG_SKIP_THRESHOLD_MODE_A}"
+            )
+            return "SKIPPED", None
+
+        if mode == "B" and top_cross_encoder_score > CRAG_SKIP_THRESHOLD_MODE_B:
+            logger.debug(
+                f"CRAG SKIP: Mode B, score {top_cross_encoder_score:.4f} > {CRAG_SKIP_THRESHOLD_MODE_B}"
+            )
+            return "SKIPPED", None
+
+        if mode == "C":
+            logger.debug("CRAG RUNNING: Mode C always runs CRAG")
+        else:
+            logger.debug(
+                f"CRAG RUNNING: Mode {mode}, score {top_cross_encoder_score:.4f} below threshold"
+            )
+
+        context_blocks = []
+        for i, chunk in enumerate(chunks[:RETRIEVAL_CRAG_INPUT_CHUNKS]):
+            context_blocks.append(
+                f"[Chunk {i + 1} — {chunk.document_id} ({chunk.chunk_type})]\n"
+                f"{chunk.chunk_text[:500]}"
+            )
+        context_text = "\n\n".join(context_blocks)
+
+        crag_prompt = (
+            f"You are evaluating whether SAP documentation is sufficient to answer an employee question.\n\n"
+            f"Employee Question: {enriched_query.raw_message}\n\n"
+            f"Retrieved SAP Documentation:\n{context_text}\n\n"
+            f"Task: Assess whether the documentation above contains enough specific information to give a "
+            f"complete, accurate answer to this exact question.\n\n"
+            f"Respond with EXACTLY one of these two formats:\n"
+            f"- If sufficient: SUFFICIENT\n"
+            f"- If insufficient: INSUFFICIENT: [one sentence describing what specific information is missing]\n\n"
+            f"Your assessment:"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{OLLAMA_JUDGE_URL}/api/generate",
+                    json={
+                        "model": MODEL_JUDGE_CRAG,
+                        "prompt": crag_prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": JUDGE_TEMPERATURE,
+                            "num_predict": CRAG_MAX_TOKENS,
+                        },
+                    },
+                )
+                resp.raise_for_status()
+                model_response = resp.json().get("response", "").strip()
+
+            if model_response.upper().startswith("SUFFICIENT"):
+                return "SUFFICIENT", None
+            elif model_response.upper().startswith("INSUFFICIENT"):
+                parts = model_response.split(":", 1)
+                gap_description = parts[1].strip() if len(parts) > 1 else "Knowledge base gap detected"
+                logger.info(f"CRAG INSUFFICIENT: {gap_description[:100]}")
+                return "INSUFFICIENT", gap_description
+            else:
+                logger.warning(f"CRAG response ambiguous: '{model_response[:50]}' — defaulting to SUFFICIENT")
+                return "SUFFICIENT", None
+
+        except Exception as e:
+            logger.error(f"CRAG model call failed: {e} — defaulting to SUFFICIENT")
+            return "SUFFICIENT", None
+
+    # ============================================================
+    # STAGE 7: CROSS-ENCODER RERANKING
+    # Runs on top RETRIEVAL_CRAG_INPUT_CHUNKS (8) candidates from RRF.
+    # Returns top RETRIEVAL_FINAL_CHUNKS (5) chunks sorted by score.
+    # ============================================================
+
+    async def _stage7_rerank(
+        self,
+        enriched_query: EnrichedQuery,
+        candidates: List[RetrievedChunk],
+    ) -> Tuple[List[RetrievedChunk], float]:
+        """
+        Cross-encoder reranking using ms-marco-MiniLM-L-12-v2 via aegis-deberta:8001/rerank.
+        Scores (query, passage) pairs and returns top RETRIEVAL_FINAL_CHUNKS (5) chunks.
+
+        Returns (reranked_chunks, top_cross_encoder_score).
+        On failure: returns original RRF order (first 5), all scores 0.0 — non-blocking.
+        """
+        from app.config import DEBERTA_SERVICE_URL, RETRIEVAL_FINAL_CHUNKS
+
+        if not candidates:
+            return [], 0.0
+
+        passages = [chunk.chunk_text[:512] for chunk in candidates]
+        query_text = enriched_query.enriched_text[:200]
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{DEBERTA_SERVICE_URL}/rerank",
+                    json={
+                        "query": query_text,
+                        "passages": passages,
+                    },
+                )
+                resp.raise_for_status()
+                scores = resp.json()["scores"]
+
+        except Exception as e:
+            logger.error(f"Stage 7 reranking failed: {e} — returning original RRF order")
+            top_chunks = candidates[:RETRIEVAL_FINAL_CHUNKS]
+            for chunk in top_chunks:
+                chunk.cross_encoder_score = 0.0
+            return top_chunks, 0.0
+
+        for chunk, score in zip(candidates, scores):
+            chunk.cross_encoder_score = score
+
+        ranked = sorted(candidates, key=lambda c: c.cross_encoder_score, reverse=True)
+        top_chunks = ranked[:RETRIEVAL_FINAL_CHUNKS]
+        top_score = top_chunks[0].cross_encoder_score if top_chunks else 0.0
+
+        logger.debug(
+            f"Stage 7 reranking: top score={top_score:.4f}, "
+            f"kept {len(top_chunks)} of {len(candidates)} chunks"
+        )
+        return top_chunks, top_score
+
+    # ============================================================
+    # STAGE 8: PARENT HEADER HYDRATION
+    # ============================================================
+
+    async def _stage8_hydration(
+        self,
+        chunks: List[RetrievedChunk],
+    ) -> Optional[object]:
+        """
+        Ensure the parent header chunk is available for the primary retrieved document.
+        Queries Qdrant for a header chunk if none is already present in the top 5.
+
+        Returns a ParentHeader object, or None if header is already present or not found.
+        """
+        from app.models.retrieval import ParentHeader
+
+        if not chunks:
+            return None
+
+        HEADER_CHUNK_TYPES = {
+            "header", "procedure_header", "config_overview",
+            "error_header", "proc_header", "cfg_header",
+        }
+
+        for chunk in chunks:
+            if chunk.chunk_type in HEADER_CHUNK_TYPES:
+                logger.debug("Stage 8: header chunk already in top results — no hydration needed")
+                return None
+
+        primary_doc_id = chunks[0].document_id
+        if not primary_doc_id:
+            return None
+
+        try:
+            qdrant = await self._get_qdrant()
+            collection = self._find_document_collection_sync(primary_doc_id)
+            if not collection:
+                return None
+
+            dummy_vector = [0.0] * 768
+            all_doc_chunks = await qdrant.search_by_document_id(
+                collection_name=collection,
+                document_id=primary_doc_id,
+                query_vector=dummy_vector,
+                chunk_types=list(HEADER_CHUNK_TYPES),
+            )
+
+            if not all_doc_chunks:
+                logger.debug(f"Stage 8: no header chunk found for {primary_doc_id}")
+                return None
+
+            header_payload = all_doc_chunks[0]["payload"]
+
+            parent = ParentHeader(
+                document_id=primary_doc_id,
+                content_type=header_payload.get("content_type", ""),
+                error_code=header_payload.get("error_code"),
+                configuration_name=header_payload.get("configuration_name"),
+                procedure_name=header_payload.get("procedure_name"),
+                module=header_payload.get("module", ""),
+                transactions=header_payload.get("transactions", []),
+                last_verified_date=header_payload.get("last_verified_date", ""),
+                verified_by=header_payload.get("verified_by", ""),
+            )
+
+            logger.debug(f"Stage 8: parent header hydrated for {primary_doc_id}")
+            return parent
+
+        except Exception as e:
+            logger.error(f"Stage 8 hydration failed: {e}")
+            return None
+
+    # ============================================================
+    # COMPLETE 8-STAGE retrieve() (replaces temporary Session 14 stub)
+    # Pipeline execution order: 1 → 2+3 (parallel) → 4 → 5 → 7 → 6 → 8
     # ============================================================
 
     async def retrieve(self, enriched_query: EnrichedQuery):
         """
-        Main retrieval pipeline entry point.
-        Runs stages 1-5 in this session. All searches use asyncio.gather.
-        Stages 6-8 appended in Session 15.
+        Complete 8-stage retrieval pipeline.
+
+        Execution order:
+          1. Dense vector search         — Qdrant "content" vector
+          2+3. Identity + BM25           — Qdrant "identity" + OpenSearch (parallel)
+          4. Knowledge Graph             — single-hop SQL via document_relationships
+          5. RRF Fusion                  — merge all sources (k=60)
+          7. Cross-Encoder Reranking     — score query-chunk pairs, keep top 5
+          6. CRAG Self-Reflection        — assess sufficiency (needs top score from Stage 7)
+          8. Parent Header Hydration     — fetch document header if missing from top 5
+
+        Note: Stage 7 runs before Stage 6 — CRAG skip logic requires the cross-encoder score.
         """
+        from app.models.retrieval import RetrievalResult
+
         logger.info(
-            f"Retrieval: mode={enriched_query.retrieval_mode}, "
-            f"classification={enriched_query.classification}, "
-            f"entities={[e.value for e in enriched_query.entities]}"
+            f"Retrieval pipeline: session={enriched_query.session_id}, "
+            f"mode={enriched_query.retrieval_mode}, "
+            f"classification={enriched_query.classification}"
         )
 
         stage1_task = self._stage1_dense(enriched_query)
@@ -522,7 +776,69 @@ class RetrievalEngine:
             kg_results=kg_results,
         )
 
-        return fused_candidates
+        if not fused_candidates:
+            logger.warning("Retrieval pipeline: no candidates after RRF fusion")
+            return RetrievalResult(
+                chunks=[],
+                parent_header=None,
+                registry_notes="",
+                crag_assessment="INSUFFICIENT",
+                crag_gap_description="No documentation found for this query.",
+                retrieval_mode_used=enriched_query.retrieval_mode,
+                top_cross_encoder_score=0.0,
+            )
+
+        # Stage 7: Reranking FIRST (provides top_cross_encoder_score for CRAG skip decision)
+        reranked_chunks, top_cross_encoder_score = await self._stage7_rerank(
+            enriched_query, fused_candidates
+        )
+
+        # Stage 6: CRAG self-reflection (uses top_cross_encoder_score from Stage 7)
+        crag_assessment, crag_gap_description = await self._stage6_crag(
+            enriched_query, reranked_chunks, top_cross_encoder_score
+        )
+
+        if crag_assessment == "INSUFFICIENT":
+            from app.infrastructure.redis_client import redis_queue
+            gap_payload = json.dumps({
+                "task_type": "knowledge_gap",
+                "task_id": str(uuid.uuid4()),
+                "session_id": enriched_query.session_id,
+                "query_text": enriched_query.raw_message,
+                "extracted_entities": [
+                    {"type": e.type, "value": e.value}
+                    for e in enriched_query.entities
+                ],
+                "gap_description": crag_gap_description or "CRAG assessment: INSUFFICIENT",
+                "occurred_at": datetime.utcnow().isoformat(),
+            })
+            try:
+                await redis_queue.redis.rpush("arq:queue:knowledge_gap", gap_payload)
+            except Exception as e:
+                logger.error(f"Failed to queue knowledge gap task: {e}")
+
+        # Stage 8: Parent header hydration
+        parent_header = await self._stage8_hydration(reranked_chunks)
+
+        registry_notes = ""
+        if enriched_query.registry_result:
+            registry_notes = enriched_query.registry_result.registry_notes
+
+        result = RetrievalResult(
+            chunks=reranked_chunks,
+            parent_header=parent_header,
+            registry_notes=registry_notes,
+            crag_assessment=crag_assessment,
+            crag_gap_description=crag_gap_description,
+            retrieval_mode_used=enriched_query.retrieval_mode,
+            top_cross_encoder_score=top_cross_encoder_score,
+        )
+
+        logger.info(
+            f"Retrieval complete: {len(reranked_chunks)} chunks, "
+            f"CRAG={crag_assessment}, top_score={top_cross_encoder_score:.4f}"
+        )
+        return result
 
 
 retrieval_engine = RetrievalEngine()
