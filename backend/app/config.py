@@ -133,4 +133,13 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 # Temp file uploads
 TEMP_UPLOAD_DIR = "/tmp/aegis_uploads"
 
+# CRAG self-reflection constants (from AEGIS_CONFIGURATION_CONSTANTS.md Section 7)
+CRAG_SKIP_THRESHOLD_MODE_A = 0.82
+CRAG_SKIP_THRESHOLD_MODE_B = 0.80
+CRAG_MAX_TOKENS = 64
+JUDGE_TEMPERATURE = 0.0
+
+# Judge model alias used by CRAG (same as MODEL_JUDGE)
+MODEL_JUDGE_CRAG = os.getenv("OLLAMA_MODEL_JUDGE", "qwen2.5:7b-instruct-q4_K_M")
+
 # Note: Full implementation added in Session 02
