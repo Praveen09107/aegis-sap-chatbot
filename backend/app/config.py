@@ -142,4 +142,15 @@ JUDGE_TEMPERATURE = 0.0
 # Judge model alias used by CRAG (same as MODEL_JUDGE)
 MODEL_JUDGE_CRAG = os.getenv("OLLAMA_MODEL_JUDGE", "qwen2.5:7b-instruct-q4_K_M")
 
+# Main generation model alias (from AEGIS_CONFIGURATION_CONSTANTS.md Section 5)
+MODEL_MAIN_GENERATION = os.getenv("OLLAMA_MODEL_MAIN", "qwen2.5:32b-instruct-q4_K_M")
+
+# Generation parameters (from AEGIS_CONFIGURATION_CONSTANTS.md Section 6)
+GENERATION_MAX_TOKENS = 1000
+GENERATION_TEMPERATURE = 0.1
+JUDGE_MAX_TOKENS = 300
+
+# Config snapshot staleness threshold (from AEGIS_CONFIGURATION_CONSTANTS.md Section 14)
+CONFIG_SNAPSHOT_STALENESS_INJECT = 35  # days — inject warning if older than this
+
 # Note: Full implementation added in Session 02
