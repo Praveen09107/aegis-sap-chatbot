@@ -261,6 +261,29 @@ class RedisSessionClient:
     # Health Check
     # ============================================================
 
+    # ============================================================
+    # Redis Pub/Sub — Streaming Tokens to WebSocket
+    # Channel format: stream:{session_id}
+    # Used by reasoning_service to publish tokens for WS delivery
+    # ============================================================
+
+    def _stream_channel(self, session_id: str) -> str:
+        return f"stream:{session_id}"
+
+    async def publish_token(self, session_id: str, token: str) -> None:
+        """Publish a single generation token to the stream channel."""
+        await self.redis.publish(
+            self._stream_channel(session_id),
+            json.dumps({"type": "token", "token": token}),
+        )
+
+    async def publish_stream_complete(self, session_id: str) -> None:
+        """Signal that generation is complete on the stream channel."""
+        await self.redis.publish(
+            self._stream_channel(session_id),
+            json.dumps({"type": "stream_complete"}),
+        )
+
     async def health_check(self) -> Dict:
         """Return health status including memory usage."""
         try:

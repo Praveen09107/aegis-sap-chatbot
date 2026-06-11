@@ -128,6 +128,11 @@ async def _handle_client_message(
         retrieval_result = await retrieval_engine.retrieve(enriched)
 
         if retrieval_result.crag_assessment == "INSUFFICIENT":
+            await _queue_ticket_task(
+                session_id,
+                getattr(websocket.state, "user_id_hash", ""),
+                query_text,
+            )
             await websocket.send_json({
                 "type": "error",
                 "error_code": "INSUFFICIENT",
@@ -141,30 +146,37 @@ async def _handle_client_message(
             })
             return
 
-        # Stage C: Reasoning + Validation (Sessions 16-17)
-        # Placeholder — show retrieval summary until reasoning is implemented
+        # Stage C: Reasoning — streams tokens via Redis Pub/Sub
+        from app.services.reasoning_service import reasoning_service
+        session_data_current = await _rs.get_session(session_id)
+        session_current = (
+            SessionState.from_redis_hash(session_data_current)
+            if session_data_current
+            else session
+        )
+
+        answer_text = await reasoning_service.generate_and_stream(
+            enriched_query=enriched,
+            retrieval_result=retrieval_result,
+            session=session_current,
+            diagnostic_obj=diag_obj,
+            session_id=session_id,
+        )
+
+        # Queue audit task (fire-and-forget)
+        await _queue_audit_task(session_id, enriched, retrieval_result, 0.90, "green")
+
+        # Validation (Session 17) — placeholder result
         doc_ids = [c.document_id for c in retrieval_result.chunks]
-        await websocket.send_json({
-            "type": "token",
-            "token": (
-                f"[Retrieval complete: {len(retrieval_result.chunks)} chunks from "
-                f"{list(set(doc_ids))[:3]}, "
-                f"CRAG={retrieval_result.crag_assessment}, "
-                f"top_score={retrieval_result.top_cross_encoder_score:.2f}. "
-                f"Reasoning pipeline (Session 16) will generate the full answer.]"
-            ),
-            "session_id": session_id,
-        })
-        await websocket.send_json({"type": "stream_complete", "session_id": session_id})
         await websocket.send_json({
             "type": "validation_result",
             "validation_score": 0.90,
             "confidence_badge": "green",
             "attribution_panel": {
-                "primary_document_id": doc_ids[0] if doc_ids else "pending",
-                "primary_document_name": "Pipeline under construction",
-                "verified_by": "system",
-                "verified_date": "2024-01-01",
+                "primary_document_id": doc_ids[0] if doc_ids else "unknown",
+                "primary_document_name": retrieval_result.chunks[0].chunk_type if retrieval_result.chunks else "unknown",
+                "verified_by": retrieval_result.chunks[0].verified_by if retrieval_result.chunks else "unknown",
+                "verified_date": retrieval_result.chunks[0].last_verified_date if retrieval_result.chunks else "unknown",
                 "secondary_sources": [],
                 "confidence_badge": "green",
             },
@@ -266,3 +278,45 @@ async def _handle_feedback(session_id: str, data: dict):
         "created_at": datetime.utcnow().isoformat(),
     })
     await redis_queue.redis.rpush("arq:queue:feedback_diagnosis", task_payload)
+
+
+async def _queue_ticket_task(session_id: str, user_id_hash: str, query_text: str):
+    """Queue mock IT support ticket ARQ task when CRAG returns INSUFFICIENT."""
+    from app.infrastructure.redis_client import redis_queue
+    payload = json.dumps({
+        "task_type": "mock_ticket",
+        "task_id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "user_id_hash": user_id_hash,
+        "query_text": query_text,
+        "reason": "CRAG assessment: INSUFFICIENT — knowledge base gap",
+        "created_at": datetime.utcnow().isoformat(),
+    })
+    await redis_queue.redis.rpush("arq:queue:mock_ticket", payload)
+
+
+async def _queue_audit_task(
+    session_id: str,
+    enriched_query,
+    retrieval_result,
+    validation_score: float,
+    confidence_badge: str,
+):
+    """Queue audit log ARQ task after every successful answer generation."""
+    from app.infrastructure.redis_client import redis_queue
+    payload = json.dumps({
+        "task_type": "audit",
+        "task_id": str(uuid.uuid4()),
+        "occurred_at": datetime.utcnow().isoformat(),
+        "user_id_hash": "",
+        "session_id": session_id,
+        "trace_id": enriched_query.trace_id,
+        "request_type": "chat",
+        "governance_trigger_flags": {},
+        "validation_score": validation_score,
+        "model_tier": 2,
+        "retrieved_document_ids": [c.document_id for c in retrieval_result.chunks],
+        "confidence_badge": confidence_badge,
+        "feedback_signal": "none",
+    })
+    await redis_queue.redis.rpush("arq:queue:audit", payload)
