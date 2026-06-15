@@ -93,3 +93,6 @@ coverage.xml
 tmp/
 temp/
 *.tmp
+
+# Secrets share folder - never commit
+secrets-share/
