@@ -29,7 +29,7 @@ Basic Python from coursework; has not built a system at this scale before. Expla
 
 ## Six drift patterns to actively watch for (they compound silently)
 1. Bypassing service client wrappers — no direct Ollama/DeBERTa/BGE calls outside `backend/app/infrastructure/` or `backend/app/clients/`.
-2. Bypassing the `Settings` class — never `os.environ.get(...)` directly; always `from app.config import settings`.
+2. **Bypassing `config.py`'s centralized constants** — never `os.environ.get(...)` scattered in service files. The real pattern here (confirmed directly, not a `Settings` class/object): `config.py` holds flat, module-level constants (e.g. `INFERENCE_MODE = os.getenv(...)`), and every other file imports the specific named constants it needs directly — `from app.config import INFERENCE_MODE, CEREBRAS_API_KEY`. The environment-reading itself stays centralized in `config.py`; nothing downstream should call `os.environ`/`os.getenv` directly. (This corrects an earlier, inaccurate version of this rule that described a `settings.X` object pattern — confirmed, via a real Claude Code session, that no such object exists anywhere in this codebase.)
 3. Sync code in async context — no `requests.get()` or `time.sleep()` inside async functions; use `httpx.AsyncClient`/`asyncio.sleep`.
 4. Wrong data layer — Redis for session/cache/queue only, Postgres for persistent data, Qdrant for vectors, OpenSearch for BM25, MinIO for files. Nothing crosses.
 5. Handlers calling models directly — the chain is always handler → service → `model_gateway.py` → provider.

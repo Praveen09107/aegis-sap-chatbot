@@ -671,6 +671,23 @@ Every entry has a unique ID (`DEC-NNN`) so other specification documents can cit
 
 ---
 
+### DEC-045 — Session 17 Confirmed Genuinely Complete; Two Real Pre-Existing Gaps Found and Correctly Left Out of Scope; One Real Bug Fixed in `CLAUDE.md` Itself
+**Status:** CONFIRMED
+
+**Decision:** Session 17 (Validation Engine) is genuinely complete and correctly implemented — `validation_engine.py` matches `IMPL_17` exactly, 169/169 tests pass, `/health` remains fully healthy, and real (not mocked) DeBERTa calls were confirmed working from inside the Docker network. Two independent checks reported real failures; both were independently verified here and confirmed genuine — but both are pre-existing gaps outside Session 17's own scope, not defects in this session's work.
+
+**Finding 1 — a real regex gap in `output_governance.py` (Session 09, not Session 17).** `postgresql://aegis_user:password@localhost:5432` is not blocked by the existing credential-leak patterns, because they require `PASSWORD`/`PASSWD` followed by `:` or `=`, while in a connection URI the colon precedes the word "password," not follows it. Correctly identified as belonging to a different session's file and left unfixed rather than silently patched outside the stated scope of this session.
+
+**Finding 2 — a real gap between two foundation documents, confirmed directly.** `AEGIS_DATA_CONTRACTS.md` (line 748) explicitly documents a `"correction"` WebSocket message type with a full field structure. `IMPL_17_VALIDATION_ENGINE.md` was checked directly and contains zero mentions of "correction" anywhere — it never implements sending this message type the data contract promises. This is a genuine spec-to-spec inconsistency, present since the original build, not introduced by this session or any retrofit. Session 17 was correctly built to match `IMPL_17` exactly (per `CLAUDE.md` Rule 4 — build what's specified, nothing extra) rather than inventing an implementation for a message type its own governing session document never describes.
+
+**Finding 3 — a real, confirmed bug in `CLAUDE.md` itself, now fixed.** Drift-pattern rule #2 stated "always `from app.config import settings`" — describing a `Settings` class/object that does not exist anywhere in this codebase. The real, verified pattern is flat, module-level constants in `config.py`, imported by name directly (`from app.config import INFERENCE_MODE, ...`). This was found because a real Claude Code session, attempting the rule's literal check, hit an import failure and correctly flagged the contradiction rather than silently working around it. `CLAUDE.md` is corrected to describe the actual pattern.
+
+**A fourth item, flagged but not yet resolved — worth real attention soon, not urgent today:** Postgres authentication for `aegis_user` fails *inside* the container (confirmed during a live pipeline test), meaning Tier 1's transaction-code policy check currently no-ops silently against an empty/unreachable permission table rather than genuinely enforcing anything. This does not block Session 17's own completion, but it is a real gap in a security-relevant check and should be investigated before it matters in a real deployment.
+
+**Affects:** `CLAUDE.md` (drift-pattern rule #2, corrected). `output_governance.py`'s credential regex and the `IMPL_17`/`AEGIS_DATA_CONTRACTS.md` correction-message gap are both tracked here as real, open, future work — not fixed as part of this entry, since neither belongs to Session 17's scope.
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
@@ -687,6 +704,12 @@ Every entry has a unique ID (`DEC-NNN`) so other specification documents can cit
 **OPEN-05 — Live benchmark numbers for the three selected inference models remain uncaptured.** See DEC-023.
 
 **OPEN-06 — SambaNova's actual free-tier numeric rate limits remain unverified.** See DEC-022. Not currently load-bearing (excluded from the architecture), but left open for future reconsideration.
+
+**OPEN-07 — `output_governance.py`'s credential-leak regex misses a real, common connection-string shape.** `user:password@host` patterns (password before the field name, not after) aren't caught by the existing `PASSWORD`/`PASSWD` patterns. Found during Session 17's verification (DEC-045) but belongs to Session 09's file — needs its own dedicated fix, not folded into an unrelated session.
+
+**OPEN-08 — `AEGIS_DATA_CONTRACTS.md` documents a `"correction"` WebSocket message type that `IMPL_17` never actually implements sending.** Confirmed directly (DEC-045) — a genuine gap between two foundation documents, present since the original build. Needs a decision: either add the missing implementation to `IMPL_17` (or a later session), or correct the data contract if this message type is no longer intended. Not yet decided which.
+
+**OPEN-09 — Postgres authentication for `aegis_user` fails from inside the container**, meaning Tier 1's transaction-code policy check (`transaction_code_permissions` lookup) currently no-ops silently rather than genuinely enforcing anything. Found during Session 17's verification (DEC-045). Not blocking any session's completion so far, but a real gap in a security-relevant check — worth resolving before this matters in a live deployment.
 
 ---
 
