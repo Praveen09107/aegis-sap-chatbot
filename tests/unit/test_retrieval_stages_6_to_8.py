@@ -69,14 +69,10 @@ class TestCRAGSkipLogic:
         chunks = [make_chunk("chunk-A", "SD-ERR-001")]
         exact_score = CRAG_SKIP_THRESHOLD_MODE_A
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "SUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="SUFFICIENT"),
+        ):
             result = asyncio.run(engine._stage6_crag(query, chunks, exact_score))
 
         assert result[0] != "SKIPPED"
@@ -99,14 +95,10 @@ class TestCRAGSkipLogic:
         chunks = [make_chunk("chunk-B", "SD-ERR-001")]
         exact_score = CRAG_SKIP_THRESHOLD_MODE_B
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "SUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="SUFFICIENT"),
+        ):
             result = asyncio.run(engine._stage6_crag(query, chunks, exact_score))
 
         assert result[0] != "SKIPPED"
@@ -118,14 +110,10 @@ class TestCRAGSkipLogic:
         chunks = [make_chunk("chunk-C", "SD-ERR-001")]
         low_score = CRAG_SKIP_THRESHOLD_MODE_B - 0.05
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "SUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="SUFFICIENT"),
+        ):
             result = asyncio.run(engine._stage6_crag(query, chunks, low_score))
 
         assert result[0] in {"SUFFICIENT", "INSUFFICIENT"}
@@ -137,14 +125,10 @@ class TestCRAGSkipLogic:
         chunks = [make_chunk("chunk-D", "SD-ERR-001")]
         very_high_score = 0.99
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "SUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="SUFFICIENT"),
+        ):
             result = asyncio.run(engine._stage6_crag(query, chunks, very_high_score))
 
         assert result[0] != "SKIPPED"
@@ -155,14 +139,10 @@ class TestCRAGSkipLogic:
         query = make_query(mode="C")
         chunks = [make_chunk("chunk-D", "SD-ERR-001")]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "SUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="SUFFICIENT"),
+        ):
             result = asyncio.run(engine._stage6_crag(query, chunks, 0.0))
 
         assert result[0] != "SKIPPED"
@@ -173,14 +153,10 @@ class TestCRAGSkipLogic:
         query = make_query(mode="B")
         chunks = [make_chunk("chunk-E", "SD-ERR-001")]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "SUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="SUFFICIENT"),
+        ):
             assessment, gap = asyncio.run(engine._stage6_crag(query, chunks, 0.50))
 
         assert assessment == "SUFFICIENT"
@@ -192,16 +168,10 @@ class TestCRAGSkipLogic:
         query = make_query(mode="B")
         chunks = [make_chunk("chunk-F", "SD-ERR-001")]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {
-                "response": "INSUFFICIENT: The documentation does not cover plant 9000 specifics"
-            }
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="INSUFFICIENT: The documentation does not cover plant 9000 specifics"),
+        ):
             assessment, gap_desc = asyncio.run(engine._stage6_crag(query, chunks, 0.50))
 
         assert assessment == "INSUFFICIENT"
@@ -213,14 +183,10 @@ class TestCRAGSkipLogic:
         query = make_query(mode="B")
         chunks = [make_chunk("chunk-G", "SD-ERR-001")]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "INSUFFICIENT"}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="INSUFFICIENT"),
+        ):
             assessment, gap_desc = asyncio.run(engine._stage6_crag(query, chunks, 0.50))
 
         assert assessment == "INSUFFICIENT"
@@ -233,30 +199,25 @@ class TestCRAGSkipLogic:
         query = make_query(mode="B")
         chunks = [make_chunk("chunk-H", "SD-ERR-001")]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"response": "I cannot determine this."}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(return_value="I cannot determine this."),
+        ):
             assessment, gap = asyncio.run(engine._stage6_crag(query, chunks, 0.50))
 
         assert assessment == "SUFFICIENT"
         assert gap is None
 
     def test_crag_exception_defaults_to_sufficient(self, engine):
-        """If model HTTP call throws exception, return (SUFFICIENT, None) — non-blocking."""
+        """If model call throws exception, return (SUFFICIENT, None) — non-blocking."""
         import asyncio
         query = make_query(mode="B")
         chunks = [make_chunk("chunk-I", "SD-ERR-001")]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client.return_value)
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value.post = AsyncMock(side_effect=Exception("Network error"))
-
+        with patch(
+            "app.services.model_gateway.model_gateway.call_judge",
+            new=AsyncMock(side_effect=Exception("Network error")),
+        ):
             assessment, gap = asyncio.run(engine._stage6_crag(query, chunks, 0.50))
 
         assert assessment == "SUFFICIENT"

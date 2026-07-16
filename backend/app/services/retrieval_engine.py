@@ -508,11 +508,10 @@ class RetrievalEngine:
         from app.config import (
             CRAG_SKIP_THRESHOLD_MODE_A,
             CRAG_SKIP_THRESHOLD_MODE_B,
-            OLLAMA_JUDGE_URL,
-            MODEL_JUDGE_CRAG,
             CRAG_MAX_TOKENS,
             JUDGE_TEMPERATURE,
         )
+        from app.services.model_gateway import model_gateway
 
         mode = enriched_query.retrieval_mode
 
@@ -556,21 +555,9 @@ class RetrievalEngine:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(
-                    f"{OLLAMA_JUDGE_URL}/api/generate",
-                    json={
-                        "model": MODEL_JUDGE_CRAG,
-                        "prompt": crag_prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": JUDGE_TEMPERATURE,
-                            "num_predict": CRAG_MAX_TOKENS,
-                        },
-                    },
-                )
-                resp.raise_for_status()
-                model_response = resp.json().get("response", "").strip()
+            model_response = await model_gateway.call_judge(
+                crag_prompt, max_tokens=CRAG_MAX_TOKENS, temperature=JUDGE_TEMPERATURE
+            )
 
             if model_response.upper().startswith("SUFFICIENT"):
                 return "SUFFICIENT", None
