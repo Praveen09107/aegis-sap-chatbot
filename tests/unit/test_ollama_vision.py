@@ -13,17 +13,10 @@ from app.clients.ollama_vision import (
 class TestClassifySap:
     @pytest.mark.asyncio
     async def test_classifies_error_dialog(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"response": "error_dialog"}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_cls.return_value = mock_client
-
+        with patch(
+            "app.clients.ollama_vision.call_vision_completion",
+            new=AsyncMock(return_value="error_dialog"),
+        ):
             result = await classify_sap("base64data")
 
         assert result == SAPScreenshotType.ERROR_DIALOG
@@ -74,17 +67,11 @@ class TestExtractSapContent:
             "screen_title": "Create Outbound Delivery",
             "message_text": "Only 50 EA available",
         })
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"response": json_response}
-        mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_cls.return_value = mock_client
-
+        with patch(
+            "app.clients.ollama_vision.call_vision_completion",
+            new=AsyncMock(return_value=json_response),
+        ):
             result = await extract_sap_content("base64data", SAPScreenshotType.ERROR_DIALOG)
 
         assert isinstance(result, ExtractedSAPData)
