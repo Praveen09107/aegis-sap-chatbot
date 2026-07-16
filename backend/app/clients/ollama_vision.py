@@ -16,7 +16,13 @@ from typing import List, Dict
 
 import httpx
 
-from app.config import OLLAMA_VISION_URL, MODEL_VISION
+from app.config import (
+    INFERENCE_MODE, OLLAMA_VISION_URL, MODEL_VISION,
+    CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL_VISION,
+    GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_VISION, EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+)
+from app.infrastructure.circuit_breaker import circuit_registry
+from app.infrastructure.inference_providers import call_vision_completion
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +103,45 @@ EXTRACT_PROMPTS = {
 }
 
 
+async def _run_vision_prompt(prompt: str, image_base64: str, timeout: int) -> str:
+    """Shared provider routing for both vision functions in this file.
+    image_base64 has no data:image/...;base64, prefix — mime_type is
+    assumed image/png for the external providers, since the original
+    Ollama-only design never distinguished JPEG/PNG at this layer."""
+    if INFERENCE_MODE == "local":
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{OLLAMA_VISION_URL}/api/generate",
+                json={"model": MODEL_VISION, "prompt": prompt,
+                      "images": [image_base64], "stream": False},
+            )
+            response.raise_for_status()
+            return response.json().get("response", "")
+
+    cb_groq = circuit_registry.get("groq_vision")
+    cb_cerebras = circuit_registry.get("cerebras_vision")
+    if cb_groq.allows_call:
+        try:
+            result = await call_vision_completion(
+                base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY, model=GROQ_MODEL_VISION,
+                prompt=prompt, image_b64=image_base64, mime_type="image/png",
+                timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+            )
+            cb_groq.record_success()
+            return result
+        except Exception:
+            cb_groq.record_failure()
+    if cb_cerebras.allows_call:
+        result = await call_vision_completion(
+            base_url=CEREBRAS_BASE_URL, api_key=CEREBRAS_API_KEY, model=CEREBRAS_MODEL_VISION,
+            prompt=prompt, image_b64=image_base64, mime_type="image/png",
+            timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+        )
+        cb_cerebras.record_success()
+        return result
+    raise RuntimeError("Both groq_vision and cerebras_vision circuits are open")
+
+
 async def classify_sap(image_base64: str) -> SAPScreenshotType:
     """
     Classify a SAP screenshot into one of five screen types.
@@ -109,18 +154,7 @@ async def classify_sap(image_base64: str) -> SAPScreenshotType:
         SAPScreenshotType enum value.
     """
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.post(
-                f"{OLLAMA_VISION_URL}/api/generate",
-                json={
-                    "model": MODEL_VISION,
-                    "prompt": CLASSIFY_PROMPT,
-                    "images": [image_base64],
-                    "stream": False,
-                },
-            )
-            response.raise_for_status()
-            result_text = response.json().get("response", "").strip().lower()
+        result_text = (await _run_vision_prompt(CLASSIFY_PROMPT, image_base64, timeout=15)).strip().lower()
 
         for screen_type in SAPScreenshotType:
             if screen_type.value in result_text:
@@ -154,18 +188,7 @@ async def extract_sap_content(
     prompt = EXTRACT_PROMPTS.get(screen_type, EXTRACT_PROMPTS[SAPScreenshotType.TRANSACTION_SCREEN])
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                f"{OLLAMA_VISION_URL}/api/generate",
-                json={
-                    "model": MODEL_VISION,
-                    "prompt": prompt,
-                    "images": [image_base64],
-                    "stream": False,
-                },
-            )
-            response.raise_for_status()
-            result_text = response.json().get("response", "").strip()
+        result_text = (await _run_vision_prompt(prompt, image_base64, timeout=30)).strip()
 
         return _parse_extraction_response(result_text)
 
