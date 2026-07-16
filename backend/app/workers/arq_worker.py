@@ -92,6 +92,8 @@ class WorkerSettings:
 
     max_jobs = 10
     job_timeout = 180
+    keep_result = 3600       # Keep results for 1 hour
+    max_tries = 3            # Default retry count for all tasks
     poll_delay = 0.5
     queue_read_limit = 10
 

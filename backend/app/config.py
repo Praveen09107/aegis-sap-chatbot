@@ -68,6 +68,7 @@ MODE_C_DIVERSITY_BONUS = 0.15
 RETRIEVAL_CRAG_INPUT_CHUNKS = 8
 RETRIEVAL_FINAL_CHUNKS = 5
 KG_BASE_RANK_EQUIVALENT = 15
+MODE_C_MAX_SUBQUERIES = 2          # Mode C parallel sub-queries limit
 
 # OpenSearch
 OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "localhost")
@@ -77,6 +78,8 @@ OPENSEARCH_SEARCH_LIMIT = 10
 
 # Ingestion pipeline
 ENTITY_BOOST_REPETITIONS = 3
+MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024   # 10MB upload limit for screenshots
+MAX_DOCUMENT_BYTES = 50 * 1024 * 1024     # 50MB upload limit for documents
 
 # Redis TTLs (from AEGIS_CONFIGURATION_CONSTANTS.md Section 9)
 SESSION_TTL_SECONDS = 7200

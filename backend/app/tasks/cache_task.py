@@ -7,7 +7,7 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
-async def write_semantic_cache(ctx: Dict, cache_data: Dict):
+async def write_semantic_cache(ctx: Dict, *, cache_data: Dict):
     """
     ARQ cache write task. Embeds query and stores in Qdrant cache_queries.
     No retry (cache miss is acceptable).

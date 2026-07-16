@@ -385,6 +385,50 @@ class RedisQueueClient:
             return {"status": "unhealthy", "error": str(e)}
 
 
+class ARQTaskClient:
+    """
+    Proper ARQ task enqueueing using ARQ's native job format.
+    Replaces all raw redis.rpush() calls for background task submission.
+    """
+
+    def __init__(self):
+        self._pool = None
+
+    async def connect(self):
+        from arq.connections import create_pool, RedisSettings
+        self._pool = await create_pool(RedisSettings.from_dsn(REDIS_QUEUE_URL))
+        logger.info("Connected to ARQ task pool (Redis Instance 2)")
+
+    async def close(self):
+        if self._pool:
+            await self._pool.close()
+
+    async def enqueue_vision(self, *, session_id: str, file_path: str) -> str:
+        job = await self._pool.enqueue_job("process_vision_task", session_id=session_id, file_path=file_path)
+        return job.job_id
+
+    async def enqueue_audit(self, *, audit_data: dict) -> str:
+        job = await self._pool.enqueue_job("write_audit_log", audit_data=audit_data)
+        return job.job_id
+
+    async def enqueue_feedback_diagnosis(self, *, feedback_data: dict) -> str:
+        job = await self._pool.enqueue_job("run_feedback_diagnosis", feedback_data=feedback_data)
+        return job.job_id
+
+    async def enqueue_cache_write(self, *, cache_data: dict) -> str:
+        job = await self._pool.enqueue_job("write_semantic_cache", cache_data=cache_data)
+        return job.job_id
+
+    async def enqueue_knowledge_gap(self, *, gap_data: dict) -> str:
+        job = await self._pool.enqueue_job("record_knowledge_gap", gap_data=gap_data)
+        return job.job_id
+
+    async def enqueue_ticket(self, *, ticket_data: dict) -> str:
+        job = await self._pool.enqueue_job("create_mock_ticket", ticket_data=ticket_data)
+        return job.job_id
+
+
 # Singleton instances (initialised in FastAPI startup)
 redis_session = RedisSessionClient()
 redis_queue = RedisQueueClient()
+arq_client = ARQTaskClient()

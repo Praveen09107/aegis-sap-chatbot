@@ -17,7 +17,7 @@ from app.config import FEEDBACK_RETRIEVAL_FAIL_THRESHOLD
 logger = logging.getLogger(__name__)
 
 
-async def run_feedback_diagnosis(ctx: Dict, feedback_data: Dict):
+async def run_feedback_diagnosis(ctx: Dict, *, feedback_data: Dict):
     """
     ARQ feedback diagnosis task.
     Retry: 2 times, 60s delay.

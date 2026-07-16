@@ -5,7 +5,7 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
-async def write_audit_log(ctx: Dict, audit_data: Dict):
+async def write_audit_log(ctx: Dict, *, audit_data: Dict):
     """
     ARQ audit task. Writes one record to audit_log.
     Retry: 5 times, 10s delay.

@@ -13,6 +13,7 @@ import uuid
 import logging
 import asyncio
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -30,6 +31,14 @@ async def chat_websocket_handler(websocket: WebSocket, session_id: Optional[str]
     Called when employee connects to /ws/chat.
     """
     await websocket.accept()
+
+    from app.middleware.authentication import ws_authenticate
+    payload = await ws_authenticate(websocket)
+    if payload is None:
+        return  # ws_authenticate already closed the connection
+
+    from app.observability import ACTIVE_SESSIONS
+    ACTIVE_SESSIONS.inc()
 
     from app.infrastructure.redis_client import redis_session
 
@@ -72,6 +81,7 @@ async def chat_websocket_handler(websocket: WebSocket, session_id: Optional[str]
     except Exception as e:
         logger.error(f"WebSocket error for session {session_id}: {e}")
     finally:
+        ACTIVE_SESSIONS.dec()
         logger.info(f"WebSocket closed for session {session_id}")
 
 
@@ -112,6 +122,11 @@ async def _handle_client_message(
                 enriched.enriched_text, diag_obj
             )
 
+        from app.observability import (
+            REQUEST_COUNTER, RETRIEVAL_MODE, CRAG_ASSESSMENT, CROSS_ENCODER_SCORE,
+            ESCALATIONS, KNOWLEDGE_GAPS, GENERATION_TIER, record_pipeline_metrics,
+        )
+
         if enriched.cache_hit and enriched.cached_answer:
             await websocket.send_json({
                 "type": "token",
@@ -122,6 +137,8 @@ async def _handle_client_message(
                 "type": "stream_complete",
                 "session_id": session_id,
             })
+            record_pipeline_metrics(None, None, None, 0.0, cache_hit=True)
+            REQUEST_COUNTER.labels(endpoint="/ws/chat", status="success").inc()
             return
 
         # Stage B: Retrieval Engine (all 8 stages)
@@ -144,6 +161,16 @@ async def _handle_client_message(
                 "ticket_id": None,
                 "session_id": session_id,
             })
+            # record_pipeline_metrics is called after validation, which this
+            # path never reaches — record the retrieval-stage outcome here
+            # directly, or CRAG_ASSESSMENT/ESCALATIONS never fire for the one
+            # case they exist to measure.
+            RETRIEVAL_MODE.labels(mode=retrieval_result.retrieval_mode_used).inc()
+            CRAG_ASSESSMENT.labels(assessment="INSUFFICIENT").inc()
+            CROSS_ENCODER_SCORE.observe(retrieval_result.top_cross_encoder_score)
+            ESCALATIONS.inc()
+            KNOWLEDGE_GAPS.inc()
+            REQUEST_COUNTER.labels(endpoint="/ws/chat", status="error").inc()
             return
 
         # Stage C: Reasoning — streams tokens via Redis Pub/Sub
@@ -155,6 +182,7 @@ async def _handle_client_message(
             else session
         )
 
+        generation_started_at = time.monotonic()
         answer_text = await reasoning_service.generate_and_stream(
             enriched_query=enriched,
             retrieval_result=retrieval_result,
@@ -162,6 +190,7 @@ async def _handle_client_message(
             diagnostic_obj=diag_obj,
             session_id=session_id,
         )
+        generation_seconds = time.monotonic() - generation_started_at
 
         # Validation (Session 17): Tier 1 governance + Tier 2 NLI + Tier 3 judge,
         # with one targeted regeneration attempt if the score lands below amber.
@@ -175,7 +204,7 @@ async def _handle_client_message(
 
         # Queue audit task (fire-and-forget) with the real validation outcome
         await _queue_audit_task(
-            session_id, enriched, retrieval_result,
+            session_id, getattr(websocket.state, "user_id_hash", ""), enriched, retrieval_result,
             validation_result.validation_score, validation_result.confidence_badge,
         )
 
@@ -187,19 +216,26 @@ async def _handle_client_message(
             "session_id": session_id,
         })
 
+        record_pipeline_metrics(
+            enriched_query=enriched,
+            retrieval_result=retrieval_result,
+            validation_result=validation_result,
+            generation_seconds=generation_seconds,
+            cache_hit=False,
+        )
+        GENERATION_TIER.labels(tier="2").inc()
+        REQUEST_COUNTER.labels(endpoint="/ws/chat", status="success").inc()
+
         # High-confidence answers get queued for the semantic cache
         if validation_result.confidence_badge == "green":
-            from app.infrastructure.redis_client import redis_queue
-            cache_payload = json.dumps({
-                "task_type": "cache_write",
-                "task_id": str(uuid.uuid4()),
+            from app.infrastructure.redis_client import arq_client
+            await arq_client.enqueue_cache_write(cache_data={
                 "query_text": enriched.enriched_text,
                 "answer_text": validation_result.answer_text,
                 "validation_score": validation_result.validation_score,
                 "document_ids": [c.document_id for c in retrieval_result.chunks],
                 "created_at": datetime.utcnow().isoformat(),
             })
-            await redis_queue.redis.rpush("arq:queue:cache_write", cache_payload)
 
         # Update session state with this turn's outcome
         session_current.add_conversation_turn(
@@ -290,62 +326,47 @@ async def _handle_vision_complete(websocket: WebSocket, session_id: str):
 
 async def _queue_vision_task(session_id: str, file_path: str):
     """Queue vision processing ARQ task."""
-    from app.infrastructure.redis_client import redis_queue
-    task_id = str(uuid.uuid4())
-    task_payload = json.dumps({
-        "task_type": "vision",
-        "task_id": task_id,
-        "session_id": session_id,
-        "file_path": file_path,
-        "created_at": datetime.utcnow().isoformat(),
-    })
-    await redis_queue.redis.rpush("arq:queue:vision", task_payload)
+    from app.infrastructure.redis_client import arq_client
+    await arq_client.enqueue_vision(session_id=session_id, file_path=file_path)
 
 
 async def _handle_feedback(session_id: str, data: dict):
     """Queue feedback diagnosis task."""
-    from app.infrastructure.redis_client import redis_queue
-    task_payload = json.dumps({
-        "task_type": "feedback_diagnosis",
-        "task_id": str(uuid.uuid4()),
+    from app.infrastructure.redis_client import arq_client
+    await arq_client.enqueue_feedback_diagnosis(feedback_data={
         "feedback_event_id": data.get("feedback_event_id", ""),
         "session_id": session_id,
         "query_text": data.get("query_text", ""),
         "answer_text": data.get("answer_text", ""),
         "created_at": datetime.utcnow().isoformat(),
     })
-    await redis_queue.redis.rpush("arq:queue:feedback_diagnosis", task_payload)
 
 
 async def _queue_ticket_task(session_id: str, user_id_hash: str, query_text: str):
     """Queue mock IT support ticket ARQ task when CRAG returns INSUFFICIENT."""
-    from app.infrastructure.redis_client import redis_queue
-    payload = json.dumps({
-        "task_type": "mock_ticket",
-        "task_id": str(uuid.uuid4()),
+    from app.infrastructure.redis_client import arq_client
+    await arq_client.enqueue_ticket(ticket_data={
         "session_id": session_id,
         "user_id_hash": user_id_hash,
         "query_text": query_text,
         "reason": "CRAG assessment: INSUFFICIENT — knowledge base gap",
         "created_at": datetime.utcnow().isoformat(),
     })
-    await redis_queue.redis.rpush("arq:queue:mock_ticket", payload)
 
 
 async def _queue_audit_task(
     session_id: str,
+    user_id_hash: str,
     enriched_query,
     retrieval_result,
     validation_score: float,
     confidence_badge: str,
 ):
     """Queue audit log ARQ task after every successful answer generation."""
-    from app.infrastructure.redis_client import redis_queue
-    payload = json.dumps({
-        "task_type": "audit",
-        "task_id": str(uuid.uuid4()),
+    from app.infrastructure.redis_client import arq_client
+    await arq_client.enqueue_audit(audit_data={
         "occurred_at": datetime.utcnow().isoformat(),
-        "user_id_hash": "",
+        "user_id_hash": user_id_hash,
         "session_id": session_id,
         "trace_id": enriched_query.trace_id,
         "request_type": "chat",
@@ -356,4 +377,3 @@ async def _queue_audit_task(
         "confidence_badge": confidence_badge,
         "feedback_signal": "none",
     })
-    await redis_queue.redis.rpush("arq:queue:audit", payload)

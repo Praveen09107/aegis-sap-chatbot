@@ -282,6 +282,35 @@ class QueryIntelligenceLayer:
         """Force reload of synonym map on next request (called by admin portal)."""
         self._synonym_loaded = False
 
+    SYNONYM_RELOAD_CHANNEL = "aegis:synonym_reload"
+
+    async def start_reload_listener(self):
+        """Subscribe to Redis Pub/Sub for cross-worker cache invalidation.
+
+        Each uvicorn worker holds its own in-memory synonym map, so a
+        registry approval in one worker must signal the others to
+        invalidate theirs — redis_session.redis is the native
+        redis.asyncio client, which exposes .pubsub() directly.
+        """
+        from app.infrastructure.redis_client import redis_session
+
+        pubsub = redis_session.redis.pubsub()
+        await pubsub.subscribe(self.SYNONYM_RELOAD_CHANNEL)
+
+        async def listen():
+            while True:
+                try:
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if msg and msg["type"] == "message":
+                        logger.info("Synonym reload signal — invalidating in-memory cache")
+                        self.reload_synonym_map()
+                except Exception as e:
+                    logger.error(f"Synonym reload listener error: {e}")
+                    await asyncio.sleep(5)
+
+        asyncio.create_task(listen())
+        logger.info("Synonym map reload listener started")
+
     # ============================================================
     # STAGE 4: INTENT CLASSIFICATION
     # ============================================================

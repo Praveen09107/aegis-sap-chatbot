@@ -1,0 +1,131 @@
+{
+  "title": "AEGIS Quality Dashboard",
+  "uid": "aegis-main",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/min)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(aegis_requests_total[1m])) * 60", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Average ValidationScore",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(aegis_validation_score_sum[5m])) / sum(rate(aegis_validation_score_count[5m]))", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 0.70, "color": "yellow" },
+              { "value": 0.85, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Confidence Badge Distribution",
+      "type": "piechart",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "aegis_confidence_badge_total{badge=\"green\"}", "legendFormat": "Green", "refId": "A" },
+        { "expr": "aegis_confidence_badge_total{badge=\"amber\"}", "legendFormat": "Amber", "refId": "B" },
+        { "expr": "aegis_confidence_badge_total{badge=\"none\"}", "legendFormat": "None", "refId": "C" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "CRAG Assessment Distribution",
+      "type": "piechart",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "aegis_crag_assessment_total{assessment=\"SUFFICIENT\"}", "legendFormat": "Sufficient", "refId": "A" },
+        { "expr": "aegis_crag_assessment_total{assessment=\"INSUFFICIENT\"}", "legendFormat": "Insufficient", "refId": "B" },
+        { "expr": "aegis_crag_assessment_total{assessment=\"SKIPPED\"}", "legendFormat": "Skipped", "refId": "C" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Semantic Cache Hit Rate",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(aegis_cache_hits_total[5m]) / rate(aegis_requests_total{endpoint=\"/ws/chat\"}[5m]) * 100",
+          "legendFormat": "Cache Hit %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 6,
+      "title": "Retrieval Mode Usage",
+      "type": "bargauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 8 },
+      "targets": [
+        { "expr": "aegis_retrieval_mode_total{mode=\"A\"}", "legendFormat": "Mode A (Registry)", "refId": "A" },
+        { "expr": "aegis_retrieval_mode_total{mode=\"B\"}", "legendFormat": "Mode B (Standard)", "refId": "B" },
+        { "expr": "aegis_retrieval_mode_total{mode=\"C\"}", "legendFormat": "Mode C (Complex)", "refId": "C" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Generation Latency (p50/p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(aegis_generation_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(aegis_generation_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 8,
+      "title": "Knowledge Gap Events",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(aegis_knowledge_gap_events_total[5m]) * 60",
+          "legendFormat": "Gap Events/min",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
