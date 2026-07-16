@@ -163,25 +163,62 @@ async def _handle_client_message(
             session_id=session_id,
         )
 
-        # Queue audit task (fire-and-forget)
-        await _queue_audit_task(session_id, enriched, retrieval_result, 0.90, "green")
+        # Validation (Session 17): Tier 1 governance + Tier 2 NLI + Tier 3 judge,
+        # with one targeted regeneration attempt if the score lands below amber.
+        from app.services.validation_engine import validation_engine
+        validation_result = await validation_engine.validate_with_regeneration(
+            answer_text=answer_text,
+            enriched_query=enriched,
+            retrieval_result=retrieval_result,
+            user_role=getattr(websocket.state, "role", "employee"),
+        )
 
-        # Validation (Session 17) — placeholder result
-        doc_ids = [c.document_id for c in retrieval_result.chunks]
+        # Queue audit task (fire-and-forget) with the real validation outcome
+        await _queue_audit_task(
+            session_id, enriched, retrieval_result,
+            validation_result.validation_score, validation_result.confidence_badge,
+        )
+
         await websocket.send_json({
             "type": "validation_result",
-            "validation_score": 0.90,
-            "confidence_badge": "green",
-            "attribution_panel": {
-                "primary_document_id": doc_ids[0] if doc_ids else "unknown",
-                "primary_document_name": retrieval_result.chunks[0].chunk_type if retrieval_result.chunks else "unknown",
-                "verified_by": retrieval_result.chunks[0].verified_by if retrieval_result.chunks else "unknown",
-                "verified_date": retrieval_result.chunks[0].last_verified_date if retrieval_result.chunks else "unknown",
-                "secondary_sources": [],
-                "confidence_badge": "green",
-            },
+            "validation_score": validation_result.validation_score,
+            "confidence_badge": validation_result.confidence_badge,
+            "attribution_panel": validation_result.attribution_panel,
             "session_id": session_id,
         })
+
+        # High-confidence answers get queued for the semantic cache
+        if validation_result.confidence_badge == "green":
+            from app.infrastructure.redis_client import redis_queue
+            cache_payload = json.dumps({
+                "task_type": "cache_write",
+                "task_id": str(uuid.uuid4()),
+                "query_text": enriched.enriched_text,
+                "answer_text": validation_result.answer_text,
+                "validation_score": validation_result.validation_score,
+                "document_ids": [c.document_id for c in retrieval_result.chunks],
+                "created_at": datetime.utcnow().isoformat(),
+            })
+            await redis_queue.redis.rpush("arq:queue:cache_write", cache_payload)
+
+        # Update session state with this turn's outcome
+        session_current.add_conversation_turn(
+            query=enriched.raw_message,
+            answer=validation_result.answer_text[:300],
+            classification=enriched.classification,
+            confidence_badge=validation_result.confidence_badge,
+            doc_ids=[c.document_id for c in retrieval_result.chunks],
+        )
+        session_current.add_confidence_score(validation_result.validation_score)
+        session_current.last_entities = enriched.entities
+        session_current.last_document_ids = [c.document_id for c in retrieval_result.chunks]
+        session_current.model_tier_last = 2
+        if validation_result.confidence_badge == "none":
+            session_current.unresolved_count += 1
+        else:
+            session_current.unresolved_count = 0
+
+        await _rs.update_session(session_id, session_current.to_redis_hash())
 
     elif message_type == "feedback":
         await _handle_feedback(session_id, data)
