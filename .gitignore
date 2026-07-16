@@ -96,3 +96,4 @@ temp/
 
 # Secrets share folder - never commit
 secrets-share/
+docker-compose.override.yml

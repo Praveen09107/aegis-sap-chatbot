@@ -382,6 +382,8 @@ services:
     image: ollama/ollama:latest
     container_name: aegis-ollama-main
     hostname: aegis-ollama-main
+    profiles:
+      - local-inference
     environment:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_THREAD: "10"
@@ -402,6 +404,8 @@ services:
     image: ollama/ollama:latest
     container_name: aegis-ollama-judge
     hostname: aegis-ollama-judge
+    profiles:
+      - local-inference
     environment:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_THREAD: "3"
@@ -422,6 +426,8 @@ services:
     image: ollama/ollama:latest
     container_name: aegis-ollama-vision
     hostname: aegis-ollama-vision
+    profiles:
+      - local-inference
     environment:
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_NUM_THREAD: "3"
@@ -479,12 +485,6 @@ services:
         condition: service_healthy
       aegis-deberta:
         condition: service_healthy
-      aegis-ollama-main:
-        condition: service_healthy
-      aegis-ollama-judge:
-        condition: service_healthy
-      aegis-ollama-vision:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
@@ -517,8 +517,6 @@ services:
       aegis-pgbouncer:
         condition: service_healthy
       aegis-qdrant:
-        condition: service_healthy
-      aegis-ollama-vision:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import redis; r=redis.Redis(host='aegis-redis-queue', port=6379); r.ping()\""]

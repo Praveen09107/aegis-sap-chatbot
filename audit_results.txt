@@ -1,0 +1,107 @@
+=== SECTION 1 — FILE EXISTENCE ===
+  ✓ OK    [01] backend/requirements.txt (114 lines)
+  ✓ OK    [01] backend/requirements-dev.txt (25 lines)
+  ✓ OK    [01] backend/pyproject.toml (30 lines)
+  ✓ OK    [01] services/bge-embedding/requirements.txt (9 lines)
+  ✓ OK    [01] services/deberta-nli/requirements.txt (9 lines)
+  ✓ OK    [01] frontend/package.json (32 lines)
+  ✓ OK    [01] frontend/next.config.js (27 lines)
+  ✓ OK    [01] frontend/tsconfig.json (23 lines)
+  ✓ OK    [01] frontend/tailwind.config.js (20 lines)
+  ✓ OK    [01] frontend/postcss.config.js (6 lines)
+  ✓ OK    [01] scripts/verify_deps.py (80 lines)
+  ✓ OK    [01] .env.example (97 lines)
+  ✓ OK    [03] docker-compose.yml (598 lines)
+  ✓ OK    [03] backend/Dockerfile (29 lines)
+  ✓ OK    [03] services/bge-embedding/Dockerfile (18 lines)
+  ✓ OK    [03] services/deberta-nli/Dockerfile (18 lines)
+  ✓ OK    [03] services/bge-embedding/main.py (104 lines)
+  ✓ OK    [03] services/deberta-nli/main.py (178 lines)
+  ✓ OK    [03] infrastructure/nginx/nginx.conf (97 lines)
+  ✓ OK    [03] infrastructure/pgbouncer/pgbouncer.ini (22 lines)
+  ⚠ WARN  [03] infrastructure/pgbouncer/userlist.txt exists but is suspiciously small (1 lines)
+  ✓ OK    [03] infrastructure/prometheus/prometheus.yml (33 lines)
+  ✓ OK    [03] infrastructure/grafana/provisioning/datasources.yml (8 lines)
+  ✓ OK    [03] infrastructure/grafana/provisioning/dashboards.yml (8 lines)
+  ✓ OK    [05] database/migrations/001_operational_schema.sql (188 lines)
+  ✓ OK    [05] database/migrations/002_analytical_schema.sql (56 lines)
+  ✓ OK    [05] database/migrations/003_config_snapshot.sql (35 lines)
+  ✓ OK    [05] database/migrations/004_initial_data.sql (59 lines)
+  ✓ OK    [05] database/seeds/transaction_code_permissions.sql (103 lines)
+  ✓ OK    [05] database/seeds/synonym_map.sql (45 lines)
+  ✓ OK    [05] scripts/init_database.py (319 lines)
+  ✓ OK    [06] scripts/init_qdrant.py (456 lines)
+  ✓ OK    [06] backend/app/infrastructure/qdrant_client.py (265 lines)
+  ✓ OK    [07] scripts/init_opensearch.py (440 lines)
+  ✓ OK    [07] backend/app/infrastructure/opensearch_client.py (150 lines)
+  ✓ OK    [08] backend/app/infrastructure/redis_client.py (390 lines)
+  ✓ OK    [08] scripts/verify_redis.py (144 lines)
+  ✓ OK    [09] backend/app/middleware/input_governance.py (175 lines)
+  ✓ OK    [09] backend/app/middleware/output_governance.py (142 lines)
+  ✓ OK    [09] backend/app/middleware/rate_limiting.py (83 lines)
+  ✓ OK    [09] backend/app/middleware/trace_id.py (34 lines)
+  ✓ OK    [09] backend/app/main.py (131 lines)
+  ✓ OK    [09] tests/unit/test_input_governance.py (87 lines)
+  ✓ OK    [10] scripts/setup_keycloak.py (319 lines)
+  ✓ OK    [10] scripts/setup_vault.py (280 lines)
+  ✓ OK    [10] backend/app/middleware/authentication.py (185 lines)
+  ✓ OK    [11] backend/app/infrastructure/circuit_breaker.py (191 lines)
+  ✓ OK    [11] backend/app/models/session.py (142 lines)
+  ✓ OK    [11] backend/app/models/api.py (49 lines)
+  ✓ OK    [11] backend/app/tasks/vision_task.py (136 lines)
+  ✓ OK    [11] backend/app/tasks/audit_task.py (46 lines)
+  ✓ OK    [11] backend/app/tasks/feedback_task.py (130 lines)
+  ✓ OK    [11] backend/app/tasks/cache_task.py (50 lines)
+  ✓ OK    [11] backend/app/tasks/knowledge_gap_task.py (37 lines)
+  ✓ OK    [11] backend/app/tasks/ticket_task.py (45 lines)
+  ✓ OK    [11] backend/app/tasks/cleanup_task.py (52 lines)
+  ✓ OK    [11] backend/app/workers/arq_worker.py (99 lines)
+  ✓ OK    [11] backend/app/handlers/chat_handler.py (322 lines)
+  ✓ OK    [12] backend/app/models/retrieval.py (98 lines)
+  ✓ OK    [12] backend/app/services/query_intelligence.py (602 lines)
+  ✓ OK    [12] tests/unit/test_query_intelligence.py (336 lines)
+  ✓ OK    [13] backend/app/handlers/upload_handler.py (153 lines)
+  ✓ OK    [13] backend/app/services/vision_integration.py (141 lines)
+  ✓ OK    [13] backend/app/clients/ollama_vision.py (260 lines)
+  ✓ OK    [13] tests/unit/test_vision_integration.py (122 lines)
+  ✓ OK    [13] tests/unit/test_ollama_vision.py (117 lines)
+  ✓ OK    [14] backend/app/services/retrieval_engine.py (844 lines)
+  ✓ OK    [14] tests/unit/test_retrieval_engine.py (282 lines)
+  ✓ OK    [15] tests/unit/test_retrieval_stages_6_to_8.py (472 lines)
+  ✓ OK    [16] backend/app/services/model_gateway.py (200 lines)
+  ✓ OK    [16] backend/app/services/reasoning_service.py (293 lines)
+  ✓ OK    [16] backend/tests/unit/test_reasoning_service.py (318 lines)
+
+=== SECTION 3 — CRITICAL FACT SPOT-CHECKS ===
+  ✓ PgBouncer 6432 OK
+  ✓ 4 migrations OK
+  ✓ MinIO correctly absent
+  ✓ 3 Ollama services OK
+
+=== SECTION 4 — GIT HISTORY ===
+Commit count: 31
+75de5ff chore: add secrets-share to gitignore
+c071dae Restore specs/ documentation
+aad5aa5 WIP: IMPL-17 Add validation constants
+e876d8d Merge IMPL-16: Reasoning Service into dev
+a2548f6 IMPL-16: Reasoning Service - model gateway, prompt assembly, Redis Pub/Sub streaming
+0cbf0d1 Merge IMPL-15: Retrieval Stages 6-8 into dev
+2457a5f IMPL-15: Retrieval stages 6-8 - CRAG, reranking, hydration verified
+4060efb Merge IMPL-14: Retrieval Stages 1-5 into dev
+267b235 IMPL-14: Retrieval stages 1-5 - RRF fusion and diversity bonus verified
+7526860 Merge IMPL-13: Vision Service into dev
+6807207 IMPL-13: Vision Service integration - upload handler and DiagnosticObject enrichment verified
+8a92067 IMPL-12: Verification fixes — QueryIntelligenceService API, EnrichedQuery fields
+b0c9e29 Merge IMPL-12: Query Intelligence Layer into dev
+3b898b6 IMPL-12: Query Intelligence Layer — full implementation
+2013737 IMPL_11: Add SessionService, fix ARQ healthcheck, circuit breaker call(), ChatResponse
+
+=== SECTION 5 — DOCKER COMPOSE VALIDITY ===
+env file /home/praveen09107/projects/aegis-project/.env not found: stat /home/praveen09107/projects/aegis-project/.env: no such file or directory
+  ✗ docker-compose.yml FAIL
+
+=== SECTION 6 — PYTEST ===
+  ⚠ pytest not installed — run: pip install -r backend/requirements-dev.txt
+
+=== SUMMARY ===
+PASS: 71   FAIL: 0   WARN: 1

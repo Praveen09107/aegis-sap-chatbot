@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd ~/projects/aegis-project && echo \"=== root files ===\" && ls -la | head -30 *)",
+      "Read(//c/Users/prave/projects/**)",
+      "Bash(cd \"//wsl.localhost/Ubuntu-22.04/home/praveen09107/projects/aegis-project\" && pwd && echo \"--- test_model_gateway.py ---\" && find . -iname \"*test_model_gateway*\" 2>/dev/null)",
+      "Read(///wsl.localhost/Ubuntu-22.04/home/praveen09107/projects/**)",
+      "Bash(cd ~/projects/aegis-project && ls -la .env 2>&1; echo \"---readlink---\"; readlink -f .env 2>&1; echo \"---target check---\"; ls -la secrets-share/ 2>&1 | head -5)",
+      "Bash(pwd; echo *)",
+      "Read(///wsl.localhost/Ubuntu-22.04//**)"
+    ]
+  }
+}
