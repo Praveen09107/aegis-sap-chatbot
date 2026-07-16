@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",  // Required for Docker multi-stage build
+
   // Enable React strict mode for better error detection
   reactStrictMode: true,
 

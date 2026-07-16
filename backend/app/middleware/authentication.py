@@ -4,12 +4,13 @@ JWT verification using Keycloak's public keys (JWKS endpoint).
 Checks: signature, expiry, revocation (Redis), audience, issuer.
 Extracts user_id and role into request.state for downstream use.
 """
+import hashlib
 import json
 import logging
 import urllib.request
 from typing import Optional
 
-from fastapi import Request
+from fastapi import Request, WebSocket
 from jose import jwt, JWTError, ExpiredSignatureError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
@@ -183,3 +184,62 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         request.state.jti = jti
 
         return await call_next(request)
+
+
+async def ws_authenticate(websocket: WebSocket) -> Optional[dict]:
+    """
+    Authenticate a WebSocket connection via ?token= query parameter.
+    The frontend fetches this token from /api/auth/ws-token before connecting.
+
+    Mirrors AuthenticationMiddleware's own verification exactly: RS256
+    signature check via the same cached JWKS (_get_public_key), issuer
+    checked against ISSUER, verify_aud disabled with a manual azp check
+    (Keycloak sets aud=account by default, not the client ID).
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Authentication required")
+        return None
+
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+        public_key = _get_public_key(kid) if kid else None
+        if not public_key:
+            await websocket.close(code=4001, reason="Token signed with unknown key")
+            return None
+
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            issuer=ISSUER,
+            options={"verify_exp": True, "verify_aud": False},
+        )
+
+        azp = payload.get("azp")
+        if azp != KEYCLOAK_CLIENT_ID:
+            await websocket.close(code=4001, reason="Token not issued for this client")
+            return None
+
+        jti = payload.get("jti")
+        if jti:
+            from app.infrastructure.redis_client import redis_session
+            if await redis_session.is_token_revoked(jti):
+                await websocket.close(code=4001, reason="Token has been revoked")
+                return None
+
+        user_id = payload.get("sub", "")
+        websocket.state.user_id = user_id
+        websocket.state.user_id_hash = hashlib.sha256(user_id.encode()).hexdigest()
+        realm_roles = payload.get("realm_access", {}).get("roles", [])
+        websocket.state.role = "it-admin" if "it-admin" in realm_roles else "employee"
+        websocket.state.jti = jti
+        return payload
+
+    except ExpiredSignatureError:
+        await websocket.close(code=4001, reason="Token has expired")
+        return None
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid token")
+        return None

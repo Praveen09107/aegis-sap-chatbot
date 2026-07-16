@@ -561,16 +561,26 @@ class RetrievalEngine:
                 crag_prompt, max_tokens=CRAG_MAX_TOKENS, temperature=JUDGE_TEMPERATURE
             )
 
-            if model_response.upper().startswith("SUFFICIENT"):
-                return "SUFFICIENT", None
-            elif model_response.upper().startswith("INSUFFICIENT"):
-                parts = model_response.split(":", 1)
-                gap_description = parts[1].strip() if len(parts) > 1 else "Knowledge base gap detected"
-                logger.info(f"CRAG INSUFFICIENT: {gap_description[:100]}")
+            response_upper = model_response.upper()
+
+            insufficient_idx = response_upper.find("INSUFFICIENT")
+            if insufficient_idx != -1:
+                after = model_response[insufficient_idx + len("INSUFFICIENT"):].lstrip(":").strip()
+                gap_description = after.split("\n")[0][:200] if after else "Knowledge gap detected"
+                logger.info(f"CRAG INSUFFICIENT: {gap_description}")
                 return "INSUFFICIENT", gap_description
-            else:
-                logger.warning(f"CRAG response ambiguous: '{model_response[:50]}' — defaulting to SUFFICIENT")
+
+            if "SUFFICIENT" in response_upper:
                 return "SUFFICIENT", None
+
+            # Ambiguous: count sentiment signals
+            positive = sum(1 for s in ["sufficient", "adequate", "covers", "addresses", "provides"] if s in model_response.lower())
+            negative = sum(1 for s in ["insufficient", "missing", "lacks", "not enough", "incomplete"] if s in model_response.lower())
+            if negative > positive:
+                return "INSUFFICIENT", "CRAG response ambiguous — treated as insufficient"
+
+            logger.warning(f"CRAG ambiguous, defaulting SUFFICIENT: '{model_response[:60]}'")
+            return "SUFFICIENT", None
 
         except Exception as e:
             logger.error(f"CRAG model call failed: {e} — defaulting to SUFFICIENT")

@@ -7,7 +7,7 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
-async def create_mock_ticket(ctx: Dict, ticket_data: Dict):
+async def create_mock_ticket(ctx: Dict, *, ticket_data: Dict):
     """
     ARQ mock ticket creation task.
     Retry: 3 times, 15s delay.

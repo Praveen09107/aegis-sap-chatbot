@@ -36,8 +36,9 @@ Return ONLY the JSON object, no other text."""
 
 async def process_vision_task(
     ctx: Dict,
-    file_path: str,
+    *,
     session_id: str,
+    file_path: str,
 ):
     """
     ARQ vision task handler.
@@ -86,10 +87,14 @@ async def process_vision_task(
         await redis_session.set_diagnostic_object(session_id, diagnostic_obj)
         logger.info(f"Vision task: DiagnosticObject stored for session={session_id}")
 
+        from app.observability import VISION_TASKS
+        VISION_TASKS.labels(status="success").inc()
         return {"status": "success", "session_id": session_id}
 
     except Exception as e:
         logger.error(f"Vision task failed for session={session_id}: {e}")
+        from app.observability import VISION_TASKS
+        VISION_TASKS.labels(status="failed").inc()
         raise
 
     finally:

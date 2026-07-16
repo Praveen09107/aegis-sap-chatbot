@@ -7,14 +7,13 @@ For documents: validates DOCX/PDF magic bytes → passes to ingestion pipeline
 """
 import os
 import uuid
-import json
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 
-from app.config import TEMP_UPLOAD_DIR
+from app.config import TEMP_UPLOAD_DIR, MAX_SCREENSHOT_BYTES, MAX_DOCUMENT_BYTES
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -25,9 +24,6 @@ MAGIC_SIGNATURES = {
     "docx": (bytes([0x50, 0x4B, 0x03, 0x04]), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
     "pdf":  (bytes([0x25, 0x50, 0x44, 0x46]), "application/pdf"),
 }
-
-MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
-MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
 
 
 def validate_magic_bytes(file_content: bytes) -> tuple[str, str]:
@@ -146,18 +142,9 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
 
 
 async def _queue_vision_task(session_id: str, file_path: str) -> str:
-    """Queue vision processing ARQ task. Returns task_id."""
-    from app.infrastructure.redis_client import redis_queue
+    """Queue vision processing ARQ task. Returns the real ARQ job_id."""
+    from app.infrastructure.redis_client import arq_client
 
-    task_id = str(uuid.uuid4())
-    task_payload = json.dumps({
-        "task_type": "vision",
-        "task_id": task_id,
-        "session_id": session_id,
-        "file_path": file_path,
-        "created_at": datetime.utcnow().isoformat() + "Z",
-    })
-
-    await redis_queue.redis.rpush("arq:queue:vision", task_payload)
-    logger.info(f"Vision task queued: task_id={task_id}, session={session_id}")
-    return task_id
+    job_id = await arq_client.enqueue_vision(session_id=session_id, file_path=file_path)
+    logger.info(f"Vision task queued: job_id={job_id}, session={session_id}")
+    return job_id
