@@ -187,7 +187,7 @@ def create_test_users(token: str) -> bool:
     test_users = [
         {
             "username": "employee1",
-            "email": "employee1@sonacomstar.local",
+            "email": "employee1@aegis-demo.local",
             "firstName": "Test",
             "lastName": "Employee",
             "enabled": True,
@@ -196,7 +196,7 @@ def create_test_users(token: str) -> bool:
         },
         {
             "username": "itadmin1",
-            "email": "itadmin1@sonacomstar.local",
+            "email": "itadmin1@aegis-demo.local",
             "firstName": "Test",
             "lastName": "ITAdmin",
             "enabled": True,
