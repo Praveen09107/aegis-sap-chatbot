@@ -641,6 +641,21 @@ Every entry has a unique ID (`DEC-NNN`) so other specification documents can cit
 
 ---
 
+### DEC-043 — KEYCLOAK_REALM Value Questioned, Traced to Real Realm-Creation Code, Confirmed `aegis-realm`
+**Status:** CONFIRMED
+
+**Decision:** During the Session 16 close-out, `.env.example`/`.env`'s `KEYCLOAK_REALM` value was changed from `nexus-realm` to `aegis-realm` based on `AEGIS_CONFIGURATION_CONSTANTS.md` Section 19 and `config.py`'s default. Praveen questioned this change twice, specifically suspecting `nexus-realm` was the real value, and asked for verification against the actual realm-creation code rather than spec text or internal consistency alone.
+
+**Traced directly to `backend/scripts/setup_keycloak.py`** — the script that actually calls the Keycloak Admin API to create the realm. `REALM_NAME = "aegis-realm"` is defined once, as a hardcoded module-level constant at line 23. It is never read from an environment variable, never reassigned, and has no second definition anywhere in the file. Every function that touches Keycloak resolves to this same constant via f-string interpolation into the API path: `create_realm()` (realm creation itself, line 97/116), `create_roles()` (line 131), `create_clients()` (line 176), `create_test_users()` (line 222), and — critically — `verify_login()` (line 261), which performs an actual ROPC login against `/realms/{REALM_NAME}/protocol/openid-connect/token` as the script's own final correctness check. A full-repository grep for `nexus-realm` in real code (not specs) returned zero matches anywhere, before or after this investigation.
+
+**Likely source of the false lead, identified during the investigation, not dismissed:** this project's Docker network names are literally `nexus-public`, `nexus-app`, `nexus-ai`, `nexus-data`, `nexus-obs` — a real, confirmed leftover from an earlier stage of this project's naming history (before "AEGIS," per the naming lineage `specs/tier5_historical/HISTORICAL_ARCHITECTURE_EVOLUTION.md` documents, the same way Qdrant's collections still carry the even-earlier `meridian_*` names). It was a reasonable guess that the Keycloak realm followed the same "nexus" branding as the Docker networks — but `setup_keycloak.py` was never written that way; it has used `aegis-realm` since this file's creation, independent of the network-naming stage.
+
+**Why this matters beyond this one value:** this is the first time in this project's history that a spec-derived value was independently challenged and re-verified against the actual runtime-creation code rather than against another spec document or an internal-consistency argument — exactly the kind of check `AEGIS_VERIFICATION_DISCIPLINE` exists for, applied here by the person overseeing the work rather than by the implementing agent. The challenge was worth taking seriously (a wrong realm name would silently break every login in the system) and the trace confirmed the original fix was correct, with a concrete, non-dismissive explanation for why the alternative seemed plausible.
+
+**Affects:** `.env.example`, `secrets-share/.env` (both already corrected to `aegis-realm` as part of the Session 16 Phase 0 fixes — no further change needed).
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
