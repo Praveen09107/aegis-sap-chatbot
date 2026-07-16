@@ -182,11 +182,17 @@ class IngestionPipeline:
             # Stage 9: OpenSearch indexing
             await self._stage9_opensearch_index(chunks, document_id)
 
+            # Stage 11 runs before Stage 10 (deliberately reordered): Stage 10's
+            # KG edge inserts have a from_document_id foreign key against
+            # documents_registry — the row for THIS document doesn't exist until
+            # Stage 11 creates it. Running 10 before 11 (as originally ordered)
+            # meant no document could ever create an edge on its own first
+            # ingestion. Nothing in Stage 11 depends on Stage 10's output, so
+            # this reorder is safe.
+            await self._stage11_registry_update(fields, document_id, len(chunks), minio_object_key)
+
             # Stage 10: Knowledge Graph edges
             await self._stage10_knowledge_graph(fields, document_id)
-
-            # Stage 11: Documents registry update
-            await self._stage11_registry_update(fields, document_id, len(chunks), minio_object_key)
 
             logger.info(f"Ingestion complete: {document_id}, {len(chunks)} chunks")
             return IngestionResult(document_id, "active", chunk_count=len(chunks))
