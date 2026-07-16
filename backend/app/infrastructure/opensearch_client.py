@@ -141,7 +141,13 @@ class AegisOpenSearchClient:
     async def health_check(self) -> Dict:
         try:
             health = await self.client.cluster.health()
-            return {"status": health["status"], "cluster": health["cluster_name"]}
+            # AEGIS_DATA_CONTRACTS.md Section 12: services report "healthy | unhealthy".
+            # OpenSearch's native cluster colors: green (all shards allocated) and
+            # yellow (primaries allocated, replicas not — normal for single-node)
+            # both mean the service is usable; only red means data is unavailable.
+            cluster_color = health["status"]
+            status = "healthy" if cluster_color in {"green", "yellow"} else "unhealthy"
+            return {"status": status, "cluster": health["cluster_name"], "cluster_color": cluster_color}
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}
 
