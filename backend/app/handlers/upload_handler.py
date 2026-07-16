@@ -127,12 +127,22 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
 
     logger.info(f"Document saved for ingestion: {file_path} ({len(content)} bytes)")
 
-    return JSONResponse({
-        "status": "accepted",
-        "file_path": file_path,
-        "file_type": ext,
-        "message": "Document received. Ingestion will begin shortly.",
-    })
+    from app.services.ingestion_pipeline import ingestion_pipeline
+    result = await ingestion_pipeline.ingest(file_path, ext, original_filename=file.filename)
+
+    if result.status == "active":
+        return JSONResponse({
+            "status": "complete",
+            "document_id": result.document_id,
+            "chunk_count": result.chunk_count,
+            "message": f"Document {result.document_id} ingested successfully with {result.chunk_count} chunks.",
+        })
+    else:
+        return JSONResponse(status_code=422, content={
+            "status": "failed",
+            "stage": result.stage_failed,
+            "message": result.error_message,
+        })
 
 
 async def _queue_vision_task(session_id: str, file_path: str) -> str:

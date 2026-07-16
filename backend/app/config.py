@@ -16,11 +16,22 @@ load_dotenv()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "demo")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-# Company/Deployment Identity (from AMENDMENT_GENERALIZATION_BACKEND.md FILE 1 —
-# only COMPANY_NAME/COMPANY_INDUSTRY added here; ALLOWED_MODULES is IMPL_18-specific
-# and deferred until that session is built)
+# Company/Deployment Identity (from AMENDMENT_GENERALIZATION_BACKEND.md FILE 1)
 COMPANY_NAME = os.getenv("AEGIS_COMPANY_NAME", "Your Company")
 COMPANY_INDUSTRY = os.getenv("AEGIS_COMPANY_INDUSTRY", "manufacturer")
+
+# Ingestion module set (from AMENDMENT_GENERALIZATION_BACKEND.md FILE 1 —
+# deferred until IMPL_18 was actually built; that's now)
+ALLOWED_MODULES = set(os.getenv("AEGIS_SAP_MODULES", "FI,MM,SD,HR,PP,CO,BASIS").split(","))
+
+# Object storage (from AMENDMENT_OBJECT_STORAGE_MINIO.md FILE 1/3)
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "aegis-minio:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "")
+MINIO_BUCKET_DOCUMENTS = os.getenv("MINIO_BUCKET_DOCUMENTS", "aegis-documents")
+MINIO_BUCKET_SCREENSHOTS = os.getenv("MINIO_BUCKET_SCREENSHOTS", "knowledge-screenshots")
+MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+MINIO_REGION = os.getenv("MINIO_REGION", "us-east-1")
 
 # Redis
 REDIS_SESSION_URL = os.getenv("REDIS_SESSION_URL", "redis://localhost:6379/0")
@@ -108,6 +119,7 @@ MODEL_MAIN = os.getenv("OLLAMA_MODEL_MAIN", "qwen2.5:32b-instruct-q4_K_M")
 MODEL_JUDGE = os.getenv("OLLAMA_MODEL_JUDGE", "qwen2.5:7b-instruct-q4_K_M")
 MODEL_VISION = os.getenv("OLLAMA_MODEL_VISION", "qwen2.5vl:7b-instruct-q4_K_M")
 EMBEDDING_MODEL_VERSION = "bge-base-en-v1.5"
+EMBEDDING_DIMENSION = 768  # BGE-base-en-v1.5 output dimension — never change this
 
 # Inference routing (from AMENDMENT_INFERENCE_ARCHITECTURE.md FILE 1)
 INFERENCE_MODE = os.getenv("INFERENCE_MODE", "external")  # "external" | "local"
@@ -159,6 +171,11 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 
 # Temp file uploads
 TEMP_UPLOAD_DIR = "/tmp/aegis_uploads"
+
+# Ingestion pipeline constants (from AEGIS_CONFIGURATION_CONSTANTS.md Section 12)
+MIN_PDF_TEXT_LENGTH = 100     # Characters — below this, PDF is likely scanned
+MAX_CHUNK_TOKENS = 500        # Split chunks larger than this
+CHUNK_OVERLAP_TOKENS = 75     # Overlap at chunk split boundaries
 
 # CRAG self-reflection constants (from AEGIS_CONFIGURATION_CONSTANTS.md Section 7)
 CRAG_SKIP_THRESHOLD_MODE_A = 0.82
