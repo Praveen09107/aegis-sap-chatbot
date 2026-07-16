@@ -33,26 +33,36 @@ This document is not a standalone session. It removes every Sona Comstar-specifi
 
 ---
 
-## FILE 1: backend/app/config.py (ADD CONSTANTS — apply when building IMPL_18)
+## FILE 1: backend/app/config.py (ADD CONSTANTS — split gating, see note below)
+
+**Gating correction, found during real implementation (not a stale draft — this was genuinely wrong until now):** this file's two constant groups are needed at different times, but were originally gated as if both waited for `IMPL_18`. `COMPANY_NAME`/`COMPANY_INDUSTRY` are actually needed immediately — `FILE 3` below retrofits `reasoning_service.py`'s `SYSTEM_ROLE` during the **Session 16** retrofit, and imports both constants at that point. Only `ALLOWED_MODULES` is genuinely `IMPL_18`-specific (the ingestion pipeline's module-routing logic doesn't exist before then). Apply this split accordingly:
 
 ```python
+# ADD NOW, during the Session 16 retrofit — FILE 3 below imports these
+# immediately and will fail without them:
 # ADD TO: Company/Deployment Identity section (new section — this is the
 # first constant of its kind, since the original architecture had no
 # per-deployment identity concept)
 
 COMPANY_NAME = os.getenv("AEGIS_COMPANY_NAME", "Your Company")
 COMPANY_INDUSTRY = os.getenv("AEGIS_COMPANY_INDUSTRY", "manufacturer")
+```
 
+```python
+# ADD LATER, when building IMPL_18 — not needed before then, and adding it
+# now is harmless but premature (no code references it until the ingestion
+# pipeline exists):
 # ADD TO: Ingestion Constants section
 ALLOWED_MODULES = set(os.getenv("AEGIS_SAP_MODULES", "FI,MM,SD,HR,PP,CO,BASIS").split(","))
 ```
 
 **Default value preserves the original 7 standard SAP modules** — any company running standard SAP FI/MM/SD/HR/PP/CO/BASIS modules works with zero configuration; only companies with a non-standard module set need to override `AEGIS_SAP_MODULES`.
 
-After adding, verify:
+After adding the Session-16-relevant constants, verify:
 ```bash
-python -c "from app.config import COMPANY_NAME, COMPANY_INDUSTRY, ALLOWED_MODULES; print(COMPANY_NAME, ALLOWED_MODULES)"
+python -c "from app.config import COMPANY_NAME, COMPANY_INDUSTRY; print(COMPANY_NAME, COMPANY_INDUSTRY)"
 ```
+(Add `ALLOWED_MODULES` to this check once `IMPL_18` is actually being built, not before.)
 
 ---
 
@@ -249,8 +259,12 @@ Already logged as `DECISIONS_LOG.md` DEC-007 — repeated here since this docume
 ## VERIFICATION STEPS
 
 ```bash
-# Config constants
-python -c "from app.config import COMPANY_NAME, COMPANY_INDUSTRY, ALLOWED_MODULES; print('OK')"
+# Config constants — COMPANY_NAME/COMPANY_INDUSTRY exist from Session 16 onward.
+# Only add ALLOWED_MODULES to this check once IMPL_18 is actually built —
+# checking it before then will fail correctly (it genuinely doesn't exist yet),
+# not because anything is broken.
+python -c "from app.config import COMPANY_NAME, COMPANY_INDUSTRY; print('OK')"
+# python -c "from app.config import ALLOWED_MODULES; print('OK')"  # uncomment once IMPL_18 exists
 
 # No remaining hardcoded company references in backend source
 grep -rn "Sona Comstar\|SonaComstar\|sonacomstar" backend/app/ --include="*.py"

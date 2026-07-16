@@ -119,9 +119,10 @@ class TestTierSelection:
 
 class TestPromptSections:
     def test_system_role_in_prompt(self, rs, empty_session):
+        from app.config import COMPANY_NAME
         prompt = rs.assemble_prompt(make_query(), make_retrieval_result(), empty_session)
         assert "AEGIS" in prompt
-        assert "Sona Comstar" in prompt
+        assert COMPANY_NAME in prompt
         assert "SAP" in prompt
 
     def test_documentation_section_present(self, rs, empty_session):

@@ -16,6 +16,12 @@ load_dotenv()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "demo")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+# Company/Deployment Identity (from AMENDMENT_GENERALIZATION_BACKEND.md FILE 1 —
+# only COMPANY_NAME/COMPANY_INDUSTRY added here; ALLOWED_MODULES is IMPL_18-specific
+# and deferred until that session is built)
+COMPANY_NAME = os.getenv("AEGIS_COMPANY_NAME", "Your Company")
+COMPANY_INDUSTRY = os.getenv("AEGIS_COMPANY_INDUSTRY", "manufacturer")
+
 # Redis
 REDIS_SESSION_URL = os.getenv("REDIS_SESSION_URL", "redis://localhost:6379/0")
 REDIS_QUEUE_URL = os.getenv("REDIS_QUEUE_URL", "redis://localhost:6380/0")
@@ -99,6 +105,24 @@ MODEL_MAIN = os.getenv("OLLAMA_MODEL_MAIN", "qwen2.5:32b-instruct-q4_K_M")
 MODEL_JUDGE = os.getenv("OLLAMA_MODEL_JUDGE", "qwen2.5:7b-instruct-q4_K_M")
 MODEL_VISION = os.getenv("OLLAMA_MODEL_VISION", "qwen2.5vl:7b-instruct-q4_K_M")
 EMBEDDING_MODEL_VERSION = "bge-base-en-v1.5"
+
+# Inference routing (from AMENDMENT_INFERENCE_ARCHITECTURE.md FILE 1)
+INFERENCE_MODE = os.getenv("INFERENCE_MODE", "external")  # "external" | "local"
+
+# External provider — Cerebras (primary for main reasoning + vision fallback)
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
+CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
+CEREBRAS_MODEL_MAIN = "gpt-oss-120b"
+CEREBRAS_MODEL_VISION = "gemma-4-31b"
+
+# External provider — Groq (fallback for main reasoning, primary for judge + vision)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_MODEL_MAIN = "openai/gpt-oss-120b"       # same weights as CEREBRAS_MODEL_MAIN — note the "openai/" prefix Groq requires that Cerebras does not
+GROQ_MODEL_JUDGE = "llama-3.1-8b-instant"
+GROQ_MODEL_VISION = "meta-llama/llama-4-scout-17b-16e-instruct"  # prefix required — omitting it returns 404
+
+EXTERNAL_INFERENCE_TIMEOUT_SECONDS = 30   # Cerebras/Groq are fast; GENERATION_TIMEOUT_SECONDS (120) remains for the local/Ollama path
 
 # BGE and DeBERTa service URLs
 BGE_SERVICE_URL = os.getenv("BGE_SERVICE_URL", "http://aegis-bge:8002")
