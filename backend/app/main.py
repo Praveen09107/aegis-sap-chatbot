@@ -33,11 +33,13 @@ async def lifespan(app: FastAPI):
     from app.infrastructure.redis_client import redis_session, redis_queue
     from app.infrastructure.qdrant_client import qdrant_client
     from app.infrastructure.opensearch_client import opensearch_client
+    from app.infrastructure.minio_client import minio_client
 
     await redis_session.connect()
     await redis_queue.connect()
     await qdrant_client.connect()
     await opensearch_client.connect()
+    await minio_client.ensure_buckets()
 
     from app.middleware.authentication import load_keycloak_public_keys
     await load_keycloak_public_keys()

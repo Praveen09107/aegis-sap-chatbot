@@ -37,6 +37,8 @@ volumes:
     name: aegis-backup-data
   aegis-tmp-uploads:
     name: aegis-tmp-uploads
+  aegis-minio-data:
+    name: aegis-minio-data
 
 services:
 
@@ -243,6 +245,26 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+
+  aegis-minio:
+    image: minio/minio:latest
+    container_name: aegis-minio
+    hostname: aegis-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - aegis-minio-data:/data
+    networks:
+      - nexus-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # ============================================================
   # LAYER 3: Application Tier Services (depend on Layer 2)
