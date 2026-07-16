@@ -94,6 +94,9 @@ KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "aegis-chat")
 # Vault (from IMPL_10 — Secrets)
 VAULT_URL = os.getenv("VAULT_URL", "http://aegis-vault:8200")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "")
+VAULT_ROLE_ID = os.getenv("VAULT_ROLE_ID", "")
+VAULT_SECRET_ID = os.getenv("VAULT_SECRET_ID", "")
+VAULT_POSTGRES_ROLE = "aegis-operational-role"  # from scripts/setup_vault.py
 
 # Ollama model endpoints (from AEGIS_CONFIGURATION_CONSTANTS.md Section 29)
 OLLAMA_MAIN_URL = os.getenv("OLLAMA_MAIN_URL", "http://aegis-ollama-main:11434")

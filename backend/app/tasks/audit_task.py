@@ -12,11 +12,13 @@ async def write_audit_log(ctx: Dict, audit_data: Dict):
     """
     try:
         import asyncpg
-        from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+        from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB
+        from app.infrastructure.vault_client import vault_client
 
+        pg_user, pg_password = await vault_client.get_postgres_credentials()
         conn = await asyncpg.connect(
             host=POSTGRES_HOST, port=POSTGRES_PORT,
-            database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD
+            database=POSTGRES_DB, user=pg_user, password=pg_password
         )
         try:
             await conn.execute(

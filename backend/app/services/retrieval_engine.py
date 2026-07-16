@@ -34,8 +34,9 @@ from app.config import (
     RRF_K, MODE_C_DIVERSITY_BONUS,
     RETRIEVAL_CRAG_INPUT_CHUNKS,
     KG_BASE_RANK_EQUIVALENT,
-    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
+    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
 )
+from app.infrastructure.vault_client import vault_client
 from app.models.retrieval import EnrichedQuery, RetrievedChunk, RegistryResult
 
 logger = logging.getLogger(__name__)
@@ -297,9 +298,10 @@ class RetrievalEngine:
             return []
 
         try:
+            pg_user, pg_password = await vault_client.get_postgres_credentials()
             conn = await asyncpg.connect(
                 host=POSTGRES_HOST, port=POSTGRES_PORT,
-                database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+                database=POSTGRES_DB, user=pg_user, password=pg_password,
             )
             try:
                 rows = await conn.fetch(

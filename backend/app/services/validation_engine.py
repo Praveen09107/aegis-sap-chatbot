@@ -41,11 +41,12 @@ from app.config import (
     FRESHNESS_THRESHOLD_1, FRESHNESS_THRESHOLD_2, FRESHNESS_THRESHOLD_3,
     FRESHNESS_COEFF_0_90_DAYS, FRESHNESS_COEFF_90_180_DAYS,
     FRESHNESS_COEFF_180_365_DAYS, FRESHNESS_COEFF_365_PLUS_DAYS,
-    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
+    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
     COMPANY_NAME,
 )
 from app.models.retrieval import EnrichedQuery, RetrievalResult, RetrievedChunk
 from app.middleware.output_governance import scan_sentence
+from app.infrastructure.vault_client import vault_client
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +110,10 @@ class Tier1Validator:
     async def load_tcode_permissions(self):
         """Load T-code permission table from PostgreSQL into memory."""
         try:
+            pg_user, pg_password = await vault_client.get_postgres_credentials()
             conn = await asyncpg.connect(
                 host=POSTGRES_HOST, port=POSTGRES_PORT,
-                database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+                database=POSTGRES_DB, user=pg_user, password=pg_password,
             )
             try:
                 rows = await conn.fetch(

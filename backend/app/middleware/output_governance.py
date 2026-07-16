@@ -50,12 +50,22 @@ PATTERN_CONTAINER_HOSTNAME = re.compile(
     re.IGNORECASE,
 )
 
+# Connection-string credential leaks: scheme://user:password@host, e.g. a
+# leaked postgresql:// or redis:// DSN. Distinct from PATTERN_SAP_CREDENTIALS,
+# which only catches labeled fields (PASSWORD:xxx) — this catches the
+# credential embedded before the @ host separator, which that pattern misses
+# since the colon there precedes the word "password" rather than following it.
+PATTERN_URI_CREDENTIALS = re.compile(
+    r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s/:@]+:[^\s/@]+@",
+)
+
 ALL_PATTERNS = [
     ("internal_ip", PATTERN_INTERNAL_IP),
     ("jwt_token", PATTERN_JWT),
     ("vault_path", PATTERN_VAULT_PATH),
     ("sap_credential", PATTERN_SAP_CREDENTIALS),
     ("container_hostname", PATTERN_CONTAINER_HOSTNAME),
+    ("uri_credential", PATTERN_URI_CREDENTIALS),
 ]
 
 

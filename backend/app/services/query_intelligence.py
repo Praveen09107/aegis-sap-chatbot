@@ -22,11 +22,12 @@ import asyncpg
 import httpx
 
 from app.config import (
-    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
+    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
     BGE_SERVICE_URL,
     SEMANTIC_CACHE_THRESHOLD,
     MODE_C_QUERY_LENGTH_THRESHOLD,
 )
+from app.infrastructure.vault_client import vault_client
 from app.models.session import SessionState, EntityObject
 from app.models.retrieval import EnrichedQuery, RegistryResult
 
@@ -245,9 +246,10 @@ class QueryIntelligenceLayer:
     async def _load_synonym_map(self):
         """Fetch all active synonyms from PostgreSQL into memory."""
         try:
+            pg_user, pg_password = await vault_client.get_postgres_credentials()
             conn = await asyncpg.connect(
                 host=POSTGRES_HOST, port=POSTGRES_PORT,
-                database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+                database=POSTGRES_DB, user=pg_user, password=pg_password,
             )
             try:
                 rows = await conn.fetch(
@@ -359,9 +361,10 @@ class QueryIntelligenceLayer:
             return None
 
         try:
+            pg_user, pg_password = await vault_client.get_postgres_credentials()
             conn = await asyncpg.connect(
                 host=POSTGRES_HOST, port=POSTGRES_PORT,
-                database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+                database=POSTGRES_DB, user=pg_user, password=pg_password,
             )
             try:
                 for entity in checkable:
