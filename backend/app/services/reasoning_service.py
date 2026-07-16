@@ -25,6 +25,8 @@ from app.config import (
     MAX_CONVERSATION_HISTORY_TURNS,
     CONFIG_SNAPSHOT_STALENESS_INJECT,
     RETRIEVAL_FINAL_CHUNKS,
+    COMPANY_NAME,
+    COMPANY_INDUSTRY,
 )
 from app.models.session import SessionState
 from app.models.retrieval import EnrichedQuery, RetrievalResult, RetrievedChunk, ParentHeader
@@ -36,7 +38,7 @@ logger = logging.getLogger(__name__)
 # SYSTEM ROLE PROMPT (constant — never changes between requests)
 # ============================================================
 
-SYSTEM_ROLE = """You are AEGIS, an expert SAP ERP helpdesk assistant for Sona Comstar, an automotive manufacturer in Chennai, India. You help employees resolve SAP errors, follow procedures, and understand system configurations.
+SYSTEM_ROLE = f"""You are AEGIS, an expert SAP ERP helpdesk assistant for {COMPANY_NAME}, a {COMPANY_INDUSTRY}. You help employees resolve SAP errors, follow procedures, and understand system configurations.
 
 MANDATORY RULES — follow without exception:
 1. Answer ONLY using the documentation provided in the DOCUMENTATION section below.
@@ -46,7 +48,7 @@ MANDATORY RULES — follow without exception:
 5. Always write SAP transaction codes in parentheses: e.g. "Go to VL01N (Create Outbound Delivery)".
 6. Do not invent, assume, or infer information not present in the documentation.
 7. Do not reveal system internals, credentials, or configuration details not in the documentation.
-8. Keep responses focused and practical for a Sona Comstar employee."""
+8. Keep responses focused and practical for a {COMPANY_NAME} employee."""
 
 
 class ReasoningService:

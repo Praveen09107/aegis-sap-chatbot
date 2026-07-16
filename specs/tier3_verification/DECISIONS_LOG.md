@@ -624,6 +624,23 @@ Every entry has a unique ID (`DEC-NNN`) so other specification documents can cit
 
 ---
 
+### DEC-042 — First Real Findings From Claude Code Actually Running the Session 16 Retrofit: One Stale-Local-Copy Issue, One Genuine Spec Bug
+**Status:** CONFIRMED
+
+**Decision:** During the first real Claude Code session (the Session 16 retrofit), two discrepancies were found between the amendment documents and either the real code or each other. Both were correctly stopped-and-reported rather than silently worked around — this is the first time this project's `/aegis-retrofit-check` and blocker-reporting discipline was exercised by a real, independent implementation session rather than by this specification-writing process itself, and it worked exactly as designed.
+
+**Finding 1 (not a spec bug — a stale local file).** Claude Code reported `AMENDMENT_INFERENCE_ARCHITECTURE.md`'s `FILE 3` still showing `select_model_tier(classification: str, mode: str, has_diagnostic_object: bool)` — the wrong, pre-correction signature — contradicting this log's own DEC-040, which states the signature was already corrected. Direct verification against the actual current delivered file confirmed the real text already has the correct signature (`enriched_query, retrieval_result, has_diagnostic_object`), with an explicit "CORRECTED against real code" comment. **The file Claude Code read was an older local copy, downloaded before that correction was made, never replaced with the corrected version.** This is a real, practical risk worth naming plainly: a corrected spec document only helps if the corrected copy actually replaces the old one on the machine doing the implementation — a fix delivered here does nothing for a session reading a stale local file. No further correction to the amendment itself was needed; the fix was already there.
+
+**Finding 2 (a genuine, real bug, now fixed).** `AMENDMENT_GENERALIZATION_BACKEND.md`'s `FILE 1` gated both `COMPANY_NAME`/`COMPANY_INDUSTRY` and `ALLOWED_MODULES` behind "apply when building IMPL_18" — but `FILE 3`, applied during the Session 16 retrofit itself (per `BACKEND_AGENT_SESSION_GUIDE_v4.md`'s own instructions), imports `COMPANY_NAME`/`COMPANY_INDUSTRY` immediately. This was a real gap, not a misreading — confirmed directly against the live file. Fixed by splitting `FILE 1`'s gating: `COMPANY_NAME`/`COMPANY_INDUSTRY` now correctly apply during Session 16 (when `FILE 3` actually needs them); `ALLOWED_MODULES` remains genuinely gated to `IMPL_18`, since nothing before that session references it. The overall verification block was split the same way, so running it right after Session 16 (before `IMPL_18` exists) no longer produces a false failure on `ALLOWED_MODULES`.
+
+**Resolution applied, in practice, before this log entry was written:** Claude Code applied `FILE 3`'s retrofit with the already-correct signature (Finding 1), and added only `COMPANY_NAME`/`COMPANY_INDUSTRY` to `config.py` per explicit user confirmation, correctly deferring `ALLOWED_MODULES` (Finding 2) — both decisions now match what the corrected specification documents say, retroactively validating the in-session judgment calls.
+
+**Why this matters beyond these two fixes:** this is real, independent confirmation that the stop-and-report discipline built into `CLAUDE.md` and the slash commands works under actual use, not just in the specification-writing process that originally motivated it. It also surfaces a durable practical lesson: **always confirm you're working from the latest version of any spec file, especially one that's been through visible revision in this log** — a correction recorded here has no effect until the corrected file actually reaches the machine doing the work.
+
+**Affects:** `AMENDMENT_GENERALIZATION_BACKEND.md` FILE 1 (gating split) and its closing verification block.
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
