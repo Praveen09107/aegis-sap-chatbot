@@ -601,7 +601,9 @@ until the first log is written.
 
 ## 5. QDRANT COLLECTION PAYLOAD EXTENSIONS
 
-The existing `aegis_knowledge` Qdrant collection receives 7 new optional
+**Correction (Session 24, DEC-048/DEC-049 lineage):** there is no single `aegis_knowledge` Qdrant collection in the real architecture — content is split across `meridian_errors`, `meridian_procedures`, and `meridian_configs` (routed by `content_type`, a 4th, `cache_queries`, is unrelated semantic-cache storage). Quick Entry chunks route into these same 3 collections exactly like document chunks do, keyed by the same `content_type` → collection mapping already used everywhere else.
+
+Each of the 3 content collections receives 7 new optional
 payload fields on Quick Entry chunks. These fields are absent on document
 chunks — no existing query filters on them.
 
@@ -644,7 +646,7 @@ in the FastAPI application. No new client configuration is needed.
 
 ## 6. OPENSEARCH INDEX MAPPING EXTENSIONS
 
-The existing `aegis_knowledge` OpenSearch index receives the same 7 new fields.
+**Correction (Session 24):** the real OpenSearch index is `sap_documents` (`OPENSEARCH_INDEX_NAME` in `config.py`), not `aegis_knowledge` — confirmed against the live mapping. This index receives the same 7 new fields.
 
 ```json
 {
@@ -664,7 +666,7 @@ The existing `aegis_knowledge` OpenSearch index receives the same 7 new fields.
 
 Apply this mapping update:
 ```bash
-curl -X PUT "http://aegis-opensearch:9200/aegis_knowledge/_mapping" \
+curl -X PUT "http://aegis-opensearch:9200/sap_documents/_mapping" \
   -H 'Content-Type: application/json' \
   -d '{
     "properties": {
@@ -710,8 +712,8 @@ Example key:
 
 ## 8. DATABASE MIGRATION FILE
 
-Place this migration in `alembic/versions/` (or equivalent migration system).
-Migration name: `add_quick_entry_tables`
+**Correction (Session 24):** this project has no Alembic/SQLAlchemy migration runner anywhere — `sqlalchemy` is a declared but unused dependency, and every table in this schema (through migration 006) is a plain numbered `.sql` file in `database/migrations/`, applied via `scripts/init_database.py`'s `docker exec ... psql -f` mechanism. This migration follows that same real, established pattern instead.
+Place this migration at `database/migrations/007_quick_entry_tables.sql`.
 
 ```sql
 -- Migration: add_quick_entry_tables
@@ -841,9 +843,16 @@ CREATE INDEX idx_kfs_vision_status ON knowledge_form_screenshots (vision_status)
 CREATE INDEX idx_kfs_cleanup_eligible ON knowledge_form_screenshots (eligible_for_cleanup) WHERE eligible_for_cleanup = TRUE;
 
 -- Seed data: Onboarding fixture entries (placeholder content)
--- IMPORTANT: Replace all [PLACEHOLDER] values with real Sona Comstar SAP examples
--- before deploying to production. These fixtures are the quality standard
--- IT admins calibrate to when using Quick Entry for the first time.
+-- IMPORTANT: Replace all [PLACEHOLDER] values with realistic SAP examples
+-- (synthetic, not tied to any specific company) before deploying to
+-- production. These fixtures are the quality standard IT admins calibrate
+-- to when using Quick Entry for the first time.
+-- (AMENDMENT_GENERALIZATION_BACKEND.md FILE 8 / DEC-007)
+--
+-- Session 24 note: this seed-data block is not applied by migration 007 —
+-- it references a `users` table that doesn't exist in this schema (real
+-- user identity lives in Keycloak). Deferred to whichever session builds
+-- the actual Quick Entry onboarding flow.
 
 INSERT INTO knowledge_form_entries (
   id, document_id, content_type, module, transactions, status, version,
@@ -928,7 +937,7 @@ Append to the end of the document:
 ---
 ## QUICK ENTRY PAYLOAD FIELDS (Added in IMPL_24)
 
-Quick Entry chunks in the aegis_knowledge collection carry 7 additional
+Quick Entry chunks in the meridian_errors/meridian_procedures/meridian_configs collections carry 7 additional
 optional payload fields. These fields are absent on document-based chunks.
 No existing retrieval queries filter on these fields.
 
@@ -955,7 +964,7 @@ Append to the end of the document:
 ---
 ## QUICK ENTRY INDEX FIELDS (Added in IMPL_24)
 
-Quick Entry adds 7 new keyword/boolean/numeric fields to the aegis_knowledge
+Quick Entry adds 7 new keyword/boolean/numeric fields to the sap_documents
 OpenSearch index. Apply via PUT mapping update (see IMPL_24 Section 6).
 No re-indexing of existing documents is required.
 
