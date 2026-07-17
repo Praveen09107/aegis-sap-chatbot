@@ -22,7 +22,7 @@ import hashlib
 import logging
 import time
 from typing import Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from redis.asyncio import Redis, BlockingConnectionPool
 
@@ -428,16 +428,27 @@ class ARQTaskClient:
         return job.job_id
 
     async def enqueue_process_form_entry(self, *, entry_id: str) -> str:
-        """
-        Enqueue Quick Entry processing (chunking, embedding, Qdrant/OpenSearch
-        insertion). TODO(IMPL_26/Session 26): process_form_entry is not yet
-        registered in arq_worker.py's WorkerSettings.functions — this job
-        will sit queued and unprocessed until that session adds it. Enqueuing
-        it now is still correct: ARQ jobs for not-yet-registered function
-        names queue safely rather than erroring, and Session 26 doesn't need
-        to touch this call site at all once the task exists.
-        """
+        """Enqueue Quick Entry processing (chunking, embedding, Qdrant/OpenSearch insertion)."""
         job = await self._pool.enqueue_job("process_form_entry", entry_id=entry_id)
+        return job.job_id
+
+    async def enqueue_retry_partial_indexing(self, *, entry_id: str, defer_seconds: int = 0) -> str:
+        """Enqueue a retry pass for chunks that failed Qdrant/OpenSearch insertion."""
+        kwargs = {"entry_id": entry_id}
+        if defer_seconds:
+            kwargs["_defer_by"] = timedelta(seconds=defer_seconds)
+        job = await self._pool.enqueue_job("retry_partial_indexing", **kwargs)
+        return job.job_id
+
+    async def enqueue_screenshot_enrichment(self, *, entry_id: str, version: int) -> str:
+        """
+        Enqueue screenshot vision enrichment. IMPL_28 (the vision pipeline
+        that registers this task) hasn't been built yet — same safe-enqueue
+        behavior as enqueue_process_form_entry before Session 26 existed.
+        No screenshot upload endpoint exists yet either, so in practice this
+        is never called today; kept ready for when IMPL_28 lands.
+        """
+        job = await self._pool.enqueue_job("enrich_entry_screenshots", entry_id=entry_id, version=version)
         return job.job_id
 
 

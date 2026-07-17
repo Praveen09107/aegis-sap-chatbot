@@ -147,6 +147,15 @@ class AegisQdrantClient:
         )
         return True
 
+    async def set_payload(self, collection_name: str, point_id: str, payload: Dict) -> bool:
+        """Partially update a point's payload without touching its vectors."""
+        await self.client.set_payload(
+            collection_name=collection_name,
+            payload=payload,
+            points=[point_id],
+        )
+        return True
+
     async def delete_by_document_id(self, collection_name: str, document_id: str) -> bool:
         """Delete all points belonging to a specific document_id (for update flow)."""
         from qdrant_client.models import FilterSelector

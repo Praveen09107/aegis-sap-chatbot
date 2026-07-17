@@ -235,4 +235,12 @@ QUICK_ENTRY_RATE_LIMIT_MAX = 5                    # submissions
 QUICK_ENTRY_RATE_LIMIT_WINDOW_SECONDS = 900       # 15 minutes
 QUICK_ENTRY_PRESUBMIT_DEDUP_THRESHOLD = 0.85      # UI/check-duplicate warning threshold
 
+# Quick Entry (Session 26/27 additions — IMPL_23 Section 9 constants needed
+# by the processing pipeline and chunker; staleness/screenshot constants
+# still belong to later, not-yet-built phases)
+QUICK_ENTRY_QUALITY_THRESHOLD = 0.65              # min avg chunk quality score to publish
+QUICK_ENTRY_DEDUP_THRESHOLD = 0.92                # similarity above = flagged as duplicate
+CHUNK_STEPS_PER_BATCH = 5
+CHUNK_BRANCH_MAX_TOKENS = 1500                    # ceiling before forced split within a branch group
+
 # Note: Full implementation added in Session 02

@@ -39,6 +39,8 @@ volumes:
     name: aegis-tmp-uploads
   aegis-minio-data:
     name: aegis-minio-data
+  aegis-prometheus-multiproc:
+    name: aegis-prometheus-multiproc
 
 services:
 
@@ -277,8 +279,12 @@ services:
     environment:
       DATABASES_HOST: aegis-postgres-primary
       DATABASES_PORT: "5432"
-      DATABASES_USER: postgres
-      DATABASES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-aegis_admin_dev_2024}
+      # Fixed to a least-privilege role (aegis_app_role member only), not the
+      # postgres superuser — PgBouncer pools connections to ONE backend
+      # identity per database alias, so it cannot pass through Vault's
+      # per-request dynamic credentials. See migration 008.
+      DATABASES_USER: aegis_pooled_role
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
       DATABASES_DBNAME: aegis
       DATABASES_POOL_SIZE: "20"
       PGBOUNCER_POOL_MODE: transaction
@@ -476,13 +482,25 @@ services:
       dockerfile: Dockerfile
     container_name: aegis-fastapi
     hostname: aegis-fastapi
-    command: sh -c "rm -rf /tmp/prometheus_multiproc && mkdir -p /tmp/prometheus_multiproc && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    # NOTE: no longer wipes /tmp/prometheus_multiproc on startup — this
+    # directory is now a volume SHARED with aegis-arq (so aegis_vision_tasks_total,
+    # written by the ARQ worker process, actually aggregates into this
+    # service's /metrics). Clearing it here would risk deleting aegis-arq's
+    # live per-PID metric files out from under it if the two containers
+    # restart independently. Trade-off: stale per-PID files from long-dead
+    # processes accumulate across restarts instead of resetting cleanly —
+    # acceptable for this project's scale (infrequent manual restarts, not
+    # a fleet of ephemeral containers), and same class of imperfection as
+    # every prometheus_client multiprocess deployment without a true
+    # deploy-time (all-processes-down) cleanup hook.
+    command: sh -c "mkdir -p /tmp/prometheus_multiproc && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
     environment:
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
     env_file:
       - .env
     volumes:
       - aegis-tmp-uploads:/tmp/aegis_uploads
+      - aegis-prometheus-multiproc:/tmp/prometheus_multiproc
     ports:
       - "8000:8000"
     networks:
@@ -523,11 +541,17 @@ services:
       dockerfile: Dockerfile
     container_name: aegis-arq
     hostname: aegis-arq
-    command: python -m arq app.workers.arq_worker.WorkerSettings
+    # Shares aegis-prometheus-multiproc with aegis-fastapi so this worker's
+    # own metrics (aegis_vision_tasks_total) aggregate into the same
+    # /metrics endpoint — this process never serves /metrics itself.
+    command: sh -c "mkdir -p /tmp/prometheus_multiproc && python -m arq app.workers.arq_worker.WorkerSettings"
+    environment:
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
     env_file:
       - .env
     volumes:
       - aegis-tmp-uploads:/tmp/aegis_uploads
+      - aegis-prometheus-multiproc:/tmp/prometheus_multiproc
     networks:
       - nexus-app
       - nexus-ai

@@ -14,15 +14,14 @@ async def create_mock_ticket(ctx: Dict, *, ticket_data: Dict):
     """
     try:
         import asyncpg
-        from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB
-        from app.infrastructure.vault_client import vault_client
+        from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
 
         ticket_id = f"TKT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8]}"
 
-        pg_user, pg_password = await vault_client.get_postgres_credentials()
         conn = await asyncpg.connect(
             host=POSTGRES_HOST, port=POSTGRES_PORT,
-            database=POSTGRES_DB, user=pg_user, password=pg_password
+            database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+            statement_cache_size=0,
         )
         try:
             await conn.execute(
