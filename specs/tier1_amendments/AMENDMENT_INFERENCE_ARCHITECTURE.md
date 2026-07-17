@@ -36,7 +36,8 @@ Expected: both show direct Ollama calls matching `IMPL_15`'s `_stage6_crag` and 
 - `backend/app/config.py` — adds `INFERENCE_MODE` and 9 provider-specific constants
 - `backend/app/infrastructure/inference_providers.py` — NEW (raw Cerebras/Groq HTTP call functions)
 - `backend/app/services/model_gateway.py` — full replacement (structure preserved, provider logic added)
-- `backend/app/clients/ollama_vision.py` — retrofit of `classify_sap()` and `extract_sap_content()` (`vision_task.py` itself needs no changes — see FILE 4b)
+- `backend/app/clients/ollama_vision.py` — retrofit of `classify_sap()` and `extract_sap_content()`
+- `backend/app/tasks/vision_task.py` — retrofit of its own separate, direct Ollama call (see FILE 4b — this file does NOT call into `ollama_vision.py`; the two are confirmed independent, DEC-040)
 - `backend/app/services/retrieval_engine.py` — retrofit of `_stage6_crag`'s direct Ollama call
 - Quick Entry's vision module (`IMPL_28`, not yet built) — unifies `classify_sap`/`extract_sap_content` onto the same Groq/Cerebras vision pair
 - `.env.example` — adds 9 environment variables
@@ -444,7 +445,7 @@ python -c "from app.services.model_gateway import model_gateway, select_model_ti
 
 ## FILE 4: backend/app/clients/ollama_vision.py (RETROFIT — CORRECTS AN EARLIER VERSION OF THIS AMENDMENT)
 
-**This section previously targeted `backend/app/tasks/vision_task.py`, based on an incorrect trace through `IMPL_11`'s spec text. Confirmed wrong by direct inspection of the real repository.** The actual Ollama vision calls live in `backend/app/clients/ollama_vision.py`, built by `IMPL_13` (not `IMPL_11`) — `vision_task.py` calls into this client rather than making its own request. This is a smaller, cleaner retrofit than originally designed: one file fix here covers the main employee vision pipeline *and*, per FILE 8 below, Quick Entry — `vision_task.py` itself needs no changes at all.
+**This section previously targeted `backend/app/tasks/vision_task.py`, based on an incorrect trace through `IMPL_11`'s spec text. Confirmed wrong by direct inspection of the real repository.** The actual Ollama vision calls used by `classify_sap()`/`extract_sap_content()` live here, in `backend/app/clients/ollama_vision.py`, built by `IMPL_13` (not `IMPL_11`). **Correction to this paragraph's own earlier claim (`DEC-040`, `DEC-048`): `vision_task.py` does NOT call into this client** — it makes its own entirely separate `/api/chat` call and needs its own separate retrofit, given in FILE 4b below. This file's retrofit covers only Quick Entry's future vision reuse (FILE 8) and any other caller of `classify_sap`/`extract_sap_content` directly — not the main employee chat screenshot pipeline, which goes through `vision_task.py`.
 
 The real file has two functions, each with its own hardcoded timeout (15s classify, 30s extract) — preserve this distinction, don't collapse it into one shared timeout.
 
@@ -564,9 +565,121 @@ from app.clients.ollama_vision import classify_sap
 
 ---
 
-## FILE 4b: backend/app/tasks/vision_task.py — NO CHANGE REQUIRED
+## FILE 4b: backend/app/tasks/vision_task.py — RETROFIT — CORRECTS AN EARLIER VERSION OF THIS AMENDMENT
 
-Confirmed by inspecting the real client above: `vision_task.py` calls `classify_sap()`/`extract_sap_content()` from `app.clients.ollama_vision`, which now transparently route through Cerebras/Groq. **Do not modify this file** — the earlier version of this amendment incorrectly targeted it; this entry exists only to record that it was checked and requires nothing.
+**History, recorded rather than silently overwritten:** an earlier version of this amendment claimed `vision_task.py` calls into `app.clients.ollama_vision` and therefore needs no changes. `DEC-040` found this false by direct inspection — `vision_task.py` makes its own entirely separate call to `/api/chat`, with its own prompt and its own response parsing; it does not call `ollama_vision.py` at all. That correction was recorded in `DECISIONS_LOG.md` but the actual retrofit text below was never written into this document — confirmed during Session 23's live verification (`DEC-048`), which found the real file, unchanged, still making a raw `httpx` call with zero `INFERENCE_MODE` awareness. This entry is the retrofit that should have existed since `DEC-040`.
+
+**Open the existing `vision_task.py` (do not replace the whole file — only the block below).**
+
+```python
+# FIND this block inside process_vision_task(), between building mime_type
+# and calling _parse_diagnostic_object:
+#
+#     import httpx
+#     from app.config import OLLAMA_VISION_URL, MODEL_VISION, VISION_PROCESSING_TIMEOUT
+#
+#     async with httpx.AsyncClient(timeout=VISION_PROCESSING_TIMEOUT) as client:
+#         response = await client.post(
+#             f"{OLLAMA_VISION_URL}/api/chat",
+#             json={
+#                 "model": MODEL_VISION,
+#                 "messages": [
+#                     {"role": "user", "content": VISION_EXTRACTION_PROMPT, "images": [image_b64]}
+#                 ],
+#                 "stream": False,
+#                 "options": {"temperature": 0.0},
+#             },
+#         )
+#         response.raise_for_status()
+#         result = response.json()
+#
+#     model_output = result.get("message", {}).get("content", "")
+#     diagnostic_obj = _parse_diagnostic_object(model_output)
+
+# REPLACE WITH:
+
+    model_output = await _run_vision_extraction(image_b64, mime_type)
+    diagnostic_obj = _parse_diagnostic_object(model_output)
+
+# ADD this new module-level function (placed between process_vision_task
+# and _parse_diagnostic_object):
+
+async def _run_vision_extraction(image_b64: str, mime_type: str) -> str:
+    """
+    Provider routing for the DiagnosticObject extraction call — mirrors
+    app/clients/ollama_vision.py's _run_vision_prompt, adapted to this
+    file's own real call shape (/api/chat with a "messages" array and a
+    top-level "images" list, not /api/generate). Both files call the same
+    underlying Groq/Cerebras vision models, so they deliberately share the
+    same circuit breaker keys ("groq_vision"/"cerebras_vision") rather
+    than tracking independent circuits for the same provider dependency.
+
+    Raises on failure in both modes — the caller's existing try/except
+    already records the VISION_TASKS failure metric and lets ARQ retry,
+    matching this file's pre-existing behavior (unlike ollama_vision.py's
+    classify_sap/extract_sap_content, which swallow errors and return a
+    safe default instead, since those calls have no retry mechanism).
+    """
+    import httpx
+    from app.config import (
+        INFERENCE_MODE, OLLAMA_VISION_URL, MODEL_VISION, VISION_PROCESSING_TIMEOUT,
+        CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL_VISION,
+        GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_VISION, EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+    )
+
+    if INFERENCE_MODE == "local":
+        async with httpx.AsyncClient(timeout=VISION_PROCESSING_TIMEOUT) as client:
+            response = await client.post(
+                f"{OLLAMA_VISION_URL}/api/chat",
+                json={
+                    "model": MODEL_VISION,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": VISION_EXTRACTION_PROMPT,
+                            "images": [image_b64],
+                        }
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.0},
+                },
+            )
+            response.raise_for_status()
+            return response.json().get("message", {}).get("content", "")
+
+    from app.infrastructure.circuit_breaker import circuit_registry
+    from app.infrastructure.inference_providers import call_vision_completion
+
+    cb_groq = circuit_registry.get("groq_vision")
+    cb_cerebras = circuit_registry.get("cerebras_vision")
+    if cb_groq.allows_call:
+        try:
+            result = await call_vision_completion(
+                base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY, model=GROQ_MODEL_VISION,
+                prompt=VISION_EXTRACTION_PROMPT, image_b64=image_b64, mime_type=mime_type,
+                timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+            )
+            cb_groq.record_success()
+            return result
+        except Exception:
+            cb_groq.record_failure()
+    if cb_cerebras.allows_call:
+        result = await call_vision_completion(
+            base_url=CEREBRAS_BASE_URL, api_key=CEREBRAS_API_KEY, model=CEREBRAS_MODEL_VISION,
+            prompt=VISION_EXTRACTION_PROMPT, image_b64=image_b64, mime_type=mime_type,
+            timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+        )
+        cb_cerebras.record_success()
+        return result
+    raise RuntimeError("Both groq_vision and cerebras_vision circuits are open")
+```
+
+After applying, verify:
+```bash
+grep -n "INFERENCE_MODE\|call_vision_completion" backend/app/tasks/vision_task.py
+# Expected: both present — confirms the raw, unbranched OLLAMA_VISION_URL
+# call is gone and INFERENCE_MODE now gates it.
+```
 
 ---
 
