@@ -427,6 +427,19 @@ class ARQTaskClient:
         job = await self._pool.enqueue_job("create_mock_ticket", ticket_data=ticket_data)
         return job.job_id
 
+    async def enqueue_process_form_entry(self, *, entry_id: str) -> str:
+        """
+        Enqueue Quick Entry processing (chunking, embedding, Qdrant/OpenSearch
+        insertion). TODO(IMPL_26/Session 26): process_form_entry is not yet
+        registered in arq_worker.py's WorkerSettings.functions — this job
+        will sit queued and unprocessed until that session adds it. Enqueuing
+        it now is still correct: ARQ jobs for not-yet-registered function
+        names queue safely rather than erroring, and Session 26 doesn't need
+        to touch this call site at all once the task exists.
+        """
+        job = await self._pool.enqueue_job("process_form_entry", entry_id=entry_id)
+        return job.job_id
+
 
 # Singleton instances (initialised in FastAPI startup)
 redis_session = RedisSessionClient()
