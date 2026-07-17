@@ -227,4 +227,12 @@ FRESHNESS_COEFF_90_180_DAYS = 0.95
 FRESHNESS_COEFF_180_365_DAYS = 0.85
 FRESHNESS_COEFF_365_PLUS_DAYS = 0.75
 
+# Quick Entry (from IMPL_23_QUICK_ENTRY_OVERVIEW.md Section 9) — only the
+# constants Session 25's Phase 1.2/1.4/1.5 code actually uses; the rest of
+# Section 9's list (screenshot, chunking, staleness, feedback, autosave
+# constants) belongs to later, not-yet-built phases.
+QUICK_ENTRY_RATE_LIMIT_MAX = 5                    # submissions
+QUICK_ENTRY_RATE_LIMIT_WINDOW_SECONDS = 900       # 15 minutes
+QUICK_ENTRY_PRESUBMIT_DEDUP_THRESHOLD = 0.85      # UI/check-duplicate warning threshold
+
 # Note: Full implementation added in Session 02
