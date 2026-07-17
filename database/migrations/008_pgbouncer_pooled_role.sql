@@ -1,0 +1,24 @@
+-- Migration 008: Static login role for PgBouncer-pooled connections
+--
+-- PgBouncer (aegis-pgbouncer) pools connections to ONE fixed backend
+-- identity per database alias — it cannot pass through Vault's uniquely-
+-- named, ~hourly-rotating dynamic credentials (confirmed live: connecting
+-- through PgBouncer with a real Vault-issued credential resulted in
+-- `SELECT current_user` reporting the PgBouncer's own fixed backend user,
+-- not the credential actually presented). Prior to this migration,
+-- PgBouncer's fixed backend user was the `postgres` superuser — meaning
+-- every pooled query silently ran with superuser privileges, well beyond
+-- what the application needs.
+--
+-- This role is the fixed identity PgBouncer now connects to the backend
+-- as: LOGIN-capable, but granted nothing beyond aegis_app_role membership
+-- — the exact same privilege ceiling as every Vault-issued dynamic role.
+-- Its password is set separately (not embedded in this file, which is
+-- git-tracked) via a direct ALTER ROLE statement against the live database.
+--
+-- This is a real, deliberate trade-off (not an oversight): connections
+-- routed through PgBouncer lose Vault's per-request unique/auto-expiring/
+-- individually-revocable credential properties in exchange for genuine
+-- connection pooling. See DECISIONS_LOG.md for the full reasoning.
+
+CREATE ROLE aegis_pooled_role LOGIN IN ROLE aegis_app_role;

@@ -130,6 +130,15 @@ class AegisOpenSearchClient:
         )
         return True
 
+    async def update_document(self, chunk_id: str, partial_doc: Dict) -> bool:
+        """Partially update fields on an already-indexed document."""
+        await self.client.update(
+            index=OPENSEARCH_INDEX_NAME,
+            id=chunk_id,
+            body={"doc": partial_doc},
+        )
+        return True
+
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document_id (used in update flow)."""
         await self.client.delete_by_query(

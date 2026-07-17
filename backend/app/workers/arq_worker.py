@@ -19,6 +19,8 @@ from app.tasks.cache_task import write_semantic_cache
 from app.tasks.knowledge_gap_task import record_knowledge_gap
 from app.tasks.ticket_task import create_mock_ticket
 from app.tasks.cleanup_task import nightly_cleanup
+from app.tasks.process_form_entry import process_form_entry
+from app.tasks.retry_partial_indexing import retry_partial_indexing
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +51,19 @@ async def cleanup_task(ctx, *args, **kwargs):
 async def startup(ctx: dict):
     """Worker startup — connect to required services."""
     logger.info("ARQ worker starting up")
-    from app.infrastructure.redis_client import redis_session, redis_queue
+    from app.infrastructure.redis_client import redis_session, redis_queue, arq_client
+    from app.infrastructure.qdrant_client import qdrant_client
+    from app.infrastructure.opensearch_client import opensearch_client
     await redis_session.connect()
     await redis_queue.connect()
+    # arq_client (the module-level singleton) is process-local — FastAPI
+    # connecting its own copy at its startup does not connect this worker
+    # process's copy. process_form_entry/retry_partial_indexing enqueue
+    # follow-up jobs (retry_partial_indexing, enrich_entry_screenshots) via
+    # this same singleton, so it must be connected here too.
+    await arq_client.connect()
+    await qdrant_client.connect()
+    await opensearch_client.connect()
     ctx["redis_session"] = redis_session
     ctx["redis_queue"] = redis_queue
     logger.info("ARQ worker ready")
@@ -60,9 +72,14 @@ async def startup(ctx: dict):
 async def shutdown(ctx: dict):
     """Worker shutdown — close connections."""
     logger.info("ARQ worker shutting down")
-    from app.infrastructure.redis_client import redis_session, redis_queue
+    from app.infrastructure.redis_client import redis_session, redis_queue, arq_client
+    from app.infrastructure.qdrant_client import qdrant_client
+    from app.infrastructure.opensearch_client import opensearch_client
     await redis_session.close()
     await redis_queue.close()
+    await arq_client.close()
+    await qdrant_client.close()
+    await opensearch_client.close()
 
 
 class WorkerSettings:
@@ -78,6 +95,8 @@ class WorkerSettings:
         record_knowledge_gap,
         create_mock_ticket,
         nightly_cleanup,
+        process_form_entry,
+        retry_partial_indexing,
         # Canonical task-name aliases for ARQ dispatch
         vision_task,
         audit_task,

@@ -31,13 +31,12 @@ import httpx
 
 from app.config import (
     BGE_SERVICE_URL,
-    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
+    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
     EMBEDDING_DIMENSION, EMBEDDING_MODEL_VERSION,
     MAX_CHUNK_TOKENS, CHUNK_OVERLAP_TOKENS, MIN_PDF_TEXT_LENGTH,
     ALLOWED_MODULES, COMPANY_NAME,
     MINIO_BUCKET_DOCUMENTS,
 )
-from app.infrastructure.vault_client import vault_client
 from app.infrastructure.minio_client import minio_client
 
 logger = logging.getLogger(__name__)
@@ -874,10 +873,10 @@ class IngestionPipeline:
             return
 
         try:
-            pg_user, pg_password = await vault_client.get_postgres_credentials()
             conn = await asyncpg.connect(
                 host=POSTGRES_HOST, port=POSTGRES_PORT,
-                database=POSTGRES_DB, user=pg_user, password=pg_password,
+                database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+                statement_cache_size=0,
             )
             try:
                 for rel_id in related_ids:
@@ -912,10 +911,10 @@ class IngestionPipeline:
         transactions = [t.strip() for t in fields.get("TRANSACTIONS", "").split(",") if t.strip()]
 
         try:
-            pg_user, pg_password = await vault_client.get_postgres_credentials()
             conn = await asyncpg.connect(
                 host=POSTGRES_HOST, port=POSTGRES_PORT,
-                database=POSTGRES_DB, user=pg_user, password=pg_password,
+                database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+                statement_cache_size=0,
             )
             try:
                 from datetime import date

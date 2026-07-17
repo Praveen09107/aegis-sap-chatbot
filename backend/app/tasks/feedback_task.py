@@ -35,9 +35,8 @@ async def run_feedback_diagnosis(ctx: Dict, *, feedback_data: Dict):
         from app.config import (
             DEBERTA_SERVICE_URL, BGE_SERVICE_URL,
             QDRANT_HOST, QDRANT_PORT,
-            POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB,
+            POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
         )
-        from app.infrastructure.vault_client import vault_client
 
         async with httpx.AsyncClient(timeout=60) as client:
             embed_resp = await client.post(
@@ -82,10 +81,10 @@ async def run_feedback_diagnosis(ctx: Dict, *, feedback_data: Dict):
 
             avg_entailment = sum(all_max_entailments) / len(all_max_entailments) if all_max_entailments else 0.0
 
-        pg_user, pg_password = await vault_client.get_postgres_credentials()
         conn = await asyncpg.connect(
             host=POSTGRES_HOST, port=POSTGRES_PORT,
-            database=POSTGRES_DB, user=pg_user, password=pg_password
+            database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+            statement_cache_size=0,
         )
         try:
             if avg_entailment < FEEDBACK_RETRIEVAL_FAIL_THRESHOLD:

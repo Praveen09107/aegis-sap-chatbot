@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request, HTTPException, Depends, Response
-from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, MINIO_BUCKET_DOCUMENTS
+from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, MINIO_BUCKET_DOCUMENTS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -22,12 +22,10 @@ def require_it_admin(request: Request):
 
 async def _db():
     import asyncpg
-    from app.infrastructure.vault_client import vault_client
-
-    pg_user, pg_password = await vault_client.get_postgres_credentials()
     return await asyncpg.connect(
         host=POSTGRES_HOST, port=POSTGRES_PORT,
-        database=POSTGRES_DB, user=pg_user, password=pg_password,
+        database=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
+        statement_cache_size=0,
     )
 
 
