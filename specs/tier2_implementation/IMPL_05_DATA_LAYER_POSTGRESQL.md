@@ -975,7 +975,9 @@ Tables added:
   knowledge_form_screenshots     — screenshot storage and vision status tracking
 
 No existing tables are modified. All changes are additive.
-Run migration: alembic/versions/add_quick_entry_tables.sql (see IMPL_24 Section 8)
+Run migration: database/migrations/007_quick_entry_tables.sql (see IMPL_24 Section 8 —
+corrected Session 24: this project has no Alembic runner, migration 007 was applied
+via the same docker exec psql mechanism used for migrations 001-006)
 
 Additional migration (for feedback table — IMPL_28 Section 5.3):
   ALTER TABLE feedback ADD COLUMN IF NOT EXISTS source_form_entry_id UUID NULL;

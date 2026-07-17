@@ -663,8 +663,7 @@ git commit -m "IMPL-07: OpenSearch data layer - SAP analyzer verified"
 ---
 ## QUICK ENTRY INDEX FIELDS (Added in IMPL_24)
 
-Quick Entry adds 7 new keyword/boolean/numeric fields to the aegis_knowledge
-OpenSearch index. Apply via PUT mapping update (see IMPL_24 Section 6).
+**Correction (Session 24):** the real index is `sap_documents` (`OPENSEARCH_INDEX_NAME` in `config.py`), not `aegis_knowledge`. Quick Entry adds 7 new keyword/boolean/numeric fields to it. Apply via PUT mapping update (see IMPL_24 Section 6).
 No re-indexing of existing documents is required — the new fields are simply
 absent on documents indexed before this feature.
 
@@ -678,7 +677,7 @@ New fields added via mapping update:
   original_quality_score:  float
 
 Apply mapping update command (run once, before deploying Quick Entry):
-  curl -X PUT "http://aegis-opensearch:9200/aegis_knowledge/_mapping" \
+  curl -X PUT "http://aegis-opensearch:9200/sap_documents/_mapping" \
     -H 'Content-Type: application/json' \
     -d '{
       "properties": {

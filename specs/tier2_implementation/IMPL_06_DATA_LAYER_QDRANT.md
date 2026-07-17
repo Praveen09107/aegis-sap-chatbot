@@ -803,8 +803,8 @@ Update DECISIONS_LOG.md with:
 ---
 ## QUICK ENTRY PAYLOAD FIELDS (Added in IMPL_24)
 
-Quick Entry chunks in the aegis_knowledge collection carry 7 additional
-optional payload fields. These fields are absent on document-based chunks.
+**Correction (Session 24):** there is no single `aegis_knowledge` collection in the real architecture — this project uses 4 separate collections (`meridian_errors`, `meridian_procedures`, `meridian_configs`, plus `cache_queries` for the unrelated semantic cache). Quick Entry chunks route into the same 3 content collections as document chunks, by `content_type`, and carry 7 additional
+optional payload fields there. These fields are absent on document-based chunks.
 No existing retrieval queries filter on these fields.
 
 New fields (present ONLY on Quick Entry chunks, absent on document chunks):
