@@ -58,29 +58,7 @@ async def process_vision_task(
         ext = os.path.splitext(file_path)[1].lower()
         mime_type = "image/jpeg" if ext in {".jpg", ".jpeg"} else "image/png"
 
-        import httpx
-        from app.config import OLLAMA_VISION_URL, MODEL_VISION, VISION_PROCESSING_TIMEOUT
-
-        async with httpx.AsyncClient(timeout=VISION_PROCESSING_TIMEOUT) as client:
-            response = await client.post(
-                f"{OLLAMA_VISION_URL}/api/chat",
-                json={
-                    "model": MODEL_VISION,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": VISION_EXTRACTION_PROMPT,
-                            "images": [image_b64],
-                        }
-                    ],
-                    "stream": False,
-                    "options": {"temperature": 0.0},
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-
-        model_output = result.get("message", {}).get("content", "")
+        model_output = await _run_vision_extraction(image_b64, mime_type)
         diagnostic_obj = _parse_diagnostic_object(model_output)
 
         from app.infrastructure.redis_client import redis_session
@@ -104,6 +82,76 @@ async def process_vision_task(
                 logger.debug(f"Cleaned up temp file: {file_path}")
         except Exception as cleanup_err:
             logger.warning(f"Could not clean up temp file {file_path}: {cleanup_err}")
+
+
+async def _run_vision_extraction(image_b64: str, mime_type: str) -> str:
+    """
+    Provider routing for the DiagnosticObject extraction call — mirrors
+    app/clients/ollama_vision.py's _run_vision_prompt, adapted to this
+    file's own real call shape (/api/chat with a "messages" array and a
+    top-level "images" list, not /api/generate). Both files call the same
+    underlying Groq/Cerebras vision models, so they deliberately share the
+    same circuit breaker keys ("groq_vision"/"cerebras_vision") rather
+    than tracking independent circuits for the same provider dependency.
+
+    Raises on failure in both modes — the caller's existing try/except
+    already records the VISION_TASKS failure metric and lets ARQ retry,
+    matching this file's pre-existing behavior (unlike ollama_vision.py's
+    classify_sap/extract_sap_content, which swallow errors and return a
+    safe default instead, since those calls have no retry mechanism).
+    """
+    import httpx
+    from app.config import (
+        INFERENCE_MODE, OLLAMA_VISION_URL, MODEL_VISION, VISION_PROCESSING_TIMEOUT,
+        CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL_VISION,
+        GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_VISION, EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+    )
+
+    if INFERENCE_MODE == "local":
+        async with httpx.AsyncClient(timeout=VISION_PROCESSING_TIMEOUT) as client:
+            response = await client.post(
+                f"{OLLAMA_VISION_URL}/api/chat",
+                json={
+                    "model": MODEL_VISION,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": VISION_EXTRACTION_PROMPT,
+                            "images": [image_b64],
+                        }
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.0},
+                },
+            )
+            response.raise_for_status()
+            return response.json().get("message", {}).get("content", "")
+
+    from app.infrastructure.circuit_breaker import circuit_registry
+    from app.infrastructure.inference_providers import call_vision_completion
+
+    cb_groq = circuit_registry.get("groq_vision")
+    cb_cerebras = circuit_registry.get("cerebras_vision")
+    if cb_groq.allows_call:
+        try:
+            result = await call_vision_completion(
+                base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY, model=GROQ_MODEL_VISION,
+                prompt=VISION_EXTRACTION_PROMPT, image_b64=image_b64, mime_type=mime_type,
+                timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+            )
+            cb_groq.record_success()
+            return result
+        except Exception:
+            cb_groq.record_failure()
+    if cb_cerebras.allows_call:
+        result = await call_vision_completion(
+            base_url=CEREBRAS_BASE_URL, api_key=CEREBRAS_API_KEY, model=CEREBRAS_MODEL_VISION,
+            prompt=VISION_EXTRACTION_PROMPT, image_b64=image_b64, mime_type=mime_type,
+            timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+        )
+        cb_cerebras.record_success()
+        return result
+    raise RuntimeError("Both groq_vision and cerebras_vision circuits are open")
 
 
 def _parse_diagnostic_object(model_output: str) -> Dict:
