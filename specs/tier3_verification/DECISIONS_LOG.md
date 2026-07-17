@@ -778,6 +778,24 @@ Tracing why: `AMENDMENT_INFERENCE_ARCHITECTURE.md`'s `FILE 4b` section (`backend
 
 ---
 
+### DEC-050 — Session 24 (Quick Entry Data Model): "SQLAlchemy" Doesn't Match This Codebase, `aegis_knowledge` Corrected in 4 Documents, `users` Table Doesn't Exist
+
+**Status:** CONFIRMED
+
+**Decision:** Session 24's kickoff text named "SQLAlchemy data models" as this session's deliverable, twice. Checked directly before writing anything: `sqlalchemy[asyncio]==2.0.36` is in `requirements.txt` but `grep -rln sqlalchemy backend/app/` returns nothing — a declared, never-used dependency. Every service/task/handler in this 23-session codebase uses raw `asyncpg`/`postgres_client.py` directly; the established convention for structured data types is plain `@dataclass` (`app/models/session.py`, `app/models/retrieval.py`), not an ORM. `alembic` (which `IMPL_24`'s own text names as the migration location, `alembic/versions/`) isn't installed anywhere. Asked directly rather than silently picking either interpretation — built with dataclasses (`backend/app/models/quick_entry.py`) and a numbered `.sql` migration (`database/migrations/007_quick_entry_tables.sql`, applied the same way as migrations 001-006), not SQLAlchemy/Alembic.
+
+**`aegis_knowledge` corrected in 4 documents, not just noted.** `IMPL_24` Sections 5/6, and the Quick-Entry sections already appended to `IMPL_05`/`IMPL_06`/`IMPL_07` (by some earlier, unlogged process — these additions existed before this session touched them), all reference a single `aegis_knowledge` Qdrant collection and OpenSearch index. Neither has ever existed in this architecture (first flagged as an aside in `DEC-048`, resolved for real here): the real setup is 4 separate Qdrant collections (`meridian_errors`/`meridian_procedures`/`meridian_configs`, plus the unrelated `cache_queries`) and a single OpenSearch index, `sap_documents`. All 4 documents corrected in place. The OpenSearch mapping update was applied to the real `sap_documents` index directly — `curl -X PUT ".../sap_documents/_mapping"` — not the nonexistent name.
+
+**The migration's own seed-data block is unrunnable against this real schema.** `IMPL_24` Section 8's `INSERT INTO knowledge_form_entries` fixture references `(SELECT id FROM users WHERE role = 'it-admin' LIMIT 1)` — this schema has no `users` table (confirmed: `SELECT tablename FROM pg_tables` lists 13 tables, none of them `users`). Real user identity lives entirely in Keycloak; every other UUID "owner" column in this codebase (`audit_log.user_id_hash`, etc.) is an opaque reference, never a local FK. Excluded from migration 007 — onboarding-fixture content is a later, UI-facing session's job, not Phase 1.1's.
+
+**A grant the spec's migration text omits, added anyway.** None of `IMPL_24`'s DDL includes a `GRANT` for `aegis_app_role` on the 4 new tables — an omission that would have reproduced the exact `audit_log` INSERT-only-no-SELECT bug found and fixed in migration 006 (`DEC-046`). Added `GRANT SELECT, INSERT, UPDATE, DELETE` matching migration 004's pattern for every other operational table; confirmed live via `has_table_privilege()` on all 4 tables.
+
+**Verified live, not assumed:** table count 13 → 17 after migration, diff shows only additions; `documents_registry`'s column count and full `\d` output unchanged; all 4 new tables carry full CRUD grants; OpenSearch mapping gained 6 genuinely new fields (`chunk_type` already existed from the original Session 07 build, despite `IMPL_24` calling it one of "7 new fields") with document count and existing mappings untouched (0 documents before and after); a real `ErrorGuideFormData` dataclass was inserted as JSONB, read back, and reconstructed into a dataclass identical to the original; all 188 existing unit tests pass.
+
+**Affects:** `database/migrations/007_quick_entry_tables.sql` (new), `backend/app/models/quick_entry.py` (new), `specs/tier2_implementation/IMPL_24_QUICK_ENTRY_DATA_MODEL.md` / `IMPL_05` / `IMPL_06` / `IMPL_07` (all corrected in place, not left stale for the next reader).
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
