@@ -92,9 +92,11 @@ python scripts/verify_health.py   # all endpoints responding
 curl http://localhost:11434        # Ollama is running (from Ubuntu)
 ```
 
-Open in browser:
-- `http://localhost:3000` — AEGIS employee chat (login: employee@sonacomstar.com / password: aegis2024)
-- `http://localhost:3000/admin` — Admin portal (login: admin@sonacomstar.com / password: aegis2024)
+Open in browser (credentials are the real users `scripts/setup_keycloak.py` seeds — the
+`@sonacomstar.com` addresses previously listed here don't exist in Keycloak, confirmed
+live via a real ROPC token request):
+- `http://localhost:3000` — AEGIS employee chat (login: employee1 / password: Employee@123)
+- `http://localhost:3000/admin` — Admin portal (login: itadmin1 / password: ITAdmin@123)
 - `http://localhost:9090` — Prometheus
 - `http://localhost:3001` — Grafana (admin/admin)
 
