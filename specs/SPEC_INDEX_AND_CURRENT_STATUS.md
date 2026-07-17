@@ -29,9 +29,13 @@ STEP 1 — Session 16 retrofit FIRST
 
 STEP 2 — Independent retrofits (any order, no dependency on each other or Step 1)
   → Session 10: AMENDMENT_GENERALIZATION_BACKEND.md FILE 6 (Keycloak seed emails)
-  → Session 13: AMENDMENT_INFERENCE_ARCHITECTURE.md FILE 4 (clients/ollama_vision.py —
-    corrected target; an earlier version of this order had this at Session 11/vision_task.py,
-    which needs no changes at all — see DECISIONS_LOG.md DEC-038)
+  → Session 13: AMENDMENT_INFERENCE_ARCHITECTURE.md FILE 4 (clients/ollama_vision.py)
+    — NOTE: this line previously cited DEC-038's claim that vision_task.py needs no
+    changes. DEC-040 superseded that claim (vision_task.py makes its own separate,
+    unretrofitted Ollama call); DEC-048 confirms live that FILE 4b's actual text was
+    never updated to match, and vision_task.py is currently broken under
+    INFERENCE_MODE=external. See DECISIONS_LOG.md DEC-048 / OPEN-12 before assuming
+    Session 13 fully covers vision — it covers ollama_vision.py only.
 
 STEP 3 — Session 15 retrofit (NOW safe — Session 16 is done)
   → AMENDMENT_INFERENCE_ARCHITECTURE.md FILE 7 (retrieval_engine.py CRAG)
