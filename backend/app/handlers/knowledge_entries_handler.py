@@ -1,16 +1,22 @@
 """
 AEGIS Quick Entry — Knowledge Entries Handler
-Phase 1.4 (core: create, list, get, update, archive) and Phase 1.5
-(utility: suggest-doc-id, check-duplicate, validate-reference) of
+Phase 1.4 (core: create, list, get, update, archive), Phase 1.5 (utility:
+suggest-doc-id, check-duplicate, validate-reference), Phase 1.8 (version
+history, restore) and Phase 1.10 (feedback summary) of
 IMPL_25_QUICK_ENTRY_API_ENDPOINTS.md, per IMPL_23 Section 10's real
 dependency order.
 
 NOT built in this session (later phases, per IMPL_23 Section 10):
-  - publish/versions/restore (Phase 1.8)
-  - feedback-summary (Phase 1.10)
   - confirm-current (relates to the staleness job, Phase 1.9)
   - pipeline-health (Phase 3.3)
   - all 3 screenshot endpoints (Phase 2, depends on IMPL_28's vision pipeline)
+  - negative-feedback notifications / admin_notifications table (IMPL_29
+    Section 3.2) — Phase 1.10 per IMPL_23 Section 10 is sourced from both
+    IMPL_25 and IMPL_29, but Section 3.2 is a separate, larger feature
+    (new table, alerting logic) that belongs with the rest of IMPL_29's
+    Phase 3.x content, not this session's endpoint work. Only the read
+    endpoint IMPL_29 Section 3.1 itself points back to (IMPL_25 Endpoint 12)
+    is built here.
 
 Real-schema corrections applied (same class of gap as Sessions 23/24):
   - Router lives here, in app/handlers/, matching admin_handler.py's
@@ -22,6 +28,14 @@ Real-schema corrections applied (same class of gap as Sessions 23/24):
   - Qdrant/BGE calls use this codebase's real client methods
     (qdrant_client.search_content, /embed-single), not the ORM-flavored
     pseudocode in IMPL_25's text.
+  - IMPL_25/29's feedback-summary endpoint assumes a `feedback` table with
+    `rating`/`source_form_entry_id` columns. The real table is
+    `feedback_events`, with a `feedback_signal` column (not `rating`) and,
+    until migration 010 (this session), no `source_form_entry_id` at all —
+    IMPL_29 Section 3.1 itself notes that column depends on a migration
+    from IMPL_28 (not yet built). Added it now so this endpoint is
+    queryable; it correctly reports zero counts until IMPL_28's WebSocket
+    handler starts populating it.
 """
 import logging
 import time
@@ -293,6 +307,28 @@ async def list_entries(
         )
         total = await conn.fetchval(f"SELECT COUNT(*) FROM knowledge_form_entries kfe {where}", *params)
 
+        # Feedback join: single batch query (not N+1), per IMPL_25 Section 4.
+        entry_ids = [r["id"] for r in rows]
+        feedback_by_entry = {}
+        if entry_ids:
+            fb_rows = await conn.fetch(
+                """SELECT source_form_entry_id,
+                          COUNT(*) FILTER (WHERE feedback_signal = 'positive') AS positive,
+                          COUNT(*) FILTER (WHERE feedback_signal = 'negative') AS negative,
+                          MAX(created_at) FILTER (WHERE feedback_signal = 'negative') AS last_negative_at
+                   FROM feedback_events
+                   WHERE source_form_entry_id = ANY($1::uuid[])
+                     AND created_at >= NOW() - INTERVAL '30 days'
+                   GROUP BY source_form_entry_id""",
+                entry_ids,
+            )
+            for fb in fb_rows:
+                feedback_by_entry[fb["source_form_entry_id"]] = {
+                    "positive": fb["positive"], "negative": fb["negative"],
+                    "net": fb["positive"] - fb["negative"], "period_days": 30,
+                    "last_negative_at": fb["last_negative_at"].isoformat() if fb["last_negative_at"] else None,
+                }
+
         import json
         entries = []
         for r in rows:
@@ -305,9 +341,9 @@ async def list_entries(
                 "chunk_count": r["chunk_count"], "screenshot_count": r["screenshot_count"],
                 "has_failed_screenshots": r["has_failed_screenshots"],
                 "next_review_date": r["next_review_date"], "gap_id": str(r["gap_id"]) if r["gap_id"] else None,
-                # feedback_summary: Phase 1.10 (deferred to a later session) — feedback_events'
-                # real schema/join isn't in scope here; zero-value default, not a broken call.
-                "feedback_summary": {"positive": 0, "negative": 0, "net": 0, "period_days": 30, "last_negative_at": None},
+                "feedback_summary": feedback_by_entry.get(
+                    r["id"], {"positive": 0, "negative": 0, "net": 0, "period_days": 30, "last_negative_at": None}
+                ),
                 "issue_title": _extract_issue_title(form_data, r["content_type"]),
                 "created_at": r["created_at"], "updated_at": r["updated_at"],
             })
@@ -525,16 +561,24 @@ async def update_entry(id: str, request: Request, _admin: str = Depends(require_
         verified_date = date.fromisoformat(body["verified_date"]) if body.get("verified_date") else existing["verified_date"]
 
         if publish:
+            new_version = existing["version"] + 1
+            new_status = "processing"
+            verified_by_name = body.get("verified_by_name", existing["verified_by_name"])
+            # Snapshot the version being created now, eagerly — matching
+            # create_entry()'s pattern for version 1. NOT a snapshot of the
+            # OLD version: that row already exists (either from create_entry()
+            # for version 1, or from this same eager insert at the previous
+            # update/restore) — re-inserting it collides with
+            # uq_kfev_entry_version (confirmed live: UniqueViolationError on
+            # the very first publish-update of any entry, since create_entry()
+            # already wrote version 1's row).
             await conn.execute(
                 """INSERT INTO knowledge_form_entry_versions
                    (entry_id, version, form_data, verified_by_name, verified_date, changed_by, change_summary)
                    VALUES ($1, $2, $3, $4, $5, $6, $7)""",
-                id, existing["version"],
-                existing["form_data"] if isinstance(existing["form_data"], str) else _dumps(existing["form_data"]),
-                existing["verified_by_name"], existing["verified_date"], changed_by, body.get("change_summary"),
+                id, new_version, _dumps(form_data),
+                verified_by_name, verified_date, changed_by, body.get("change_summary"),
             )
-            new_version = existing["version"] + 1
-            new_status = "processing"
         else:
             new_version = existing["version"]
             new_status = "draft"
@@ -615,5 +659,135 @@ async def archive_entry(id: str, request: Request, _admin: str = Depends(require
 
         await conn.execute("UPDATE knowledge_form_entry_chunks SET is_current = FALSE WHERE entry_id = $1::uuid", id)
         await conn.execute("UPDATE knowledge_form_entries SET status = 'archived' WHERE id = $1::uuid", id)
+    finally:
+        await conn.close()
+
+
+# ============================================================
+# ENDPOINT 7: GET VERSION HISTORY
+# ============================================================
+
+@router.get("/{id}/versions")
+async def get_version_history(id: str, _admin: str = Depends(require_it_admin)):
+    import json
+    conn = await _db()
+    try:
+        entry = await conn.fetchrow("SELECT version FROM knowledge_form_entries WHERE id = $1::uuid", id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+
+        rows = await conn.fetch(
+            "SELECT * FROM knowledge_form_entry_versions WHERE entry_id = $1::uuid ORDER BY version DESC", id
+        )
+
+        versions = []
+        for r in rows:
+            form_data = json.loads(r["form_data"]) if isinstance(r["form_data"], str) else r["form_data"]
+            versions.append({
+                "id": str(r["id"]), "version": r["version"],
+                # No users table exists (identity lives in Keycloak) — same
+                # convention as list_entries' submitted_by_name: the raw
+                # UUID, not a resolved display name.
+                "changed_by_name": str(r["changed_by"]),
+                "changed_at": r["changed_at"].isoformat(),
+                "change_summary": r["change_summary"],
+                "verified_by_name": r["verified_by_name"],
+                "verified_date": r["verified_date"].isoformat(),
+                "form_data": form_data,
+            })
+
+        return {"entry_id": id, "versions": versions, "current_version": entry["version"]}
+    finally:
+        await conn.close()
+
+
+# ============================================================
+# ENDPOINT 8: RESTORE VERSION
+# ============================================================
+
+@router.post("/{id}/restore/{version}")
+async def restore_version(id: str, version: int, request: Request, _admin: str = Depends(require_it_admin)):
+    conn = await _db()
+    try:
+        entry = await conn.fetchrow("SELECT * FROM knowledge_form_entries WHERE id = $1::uuid", id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+        if entry["status"] == "archived":
+            raise HTTPException(status_code=409, detail="Entry is archived. Cannot restore archived entries.")
+
+        target = await conn.fetchrow(
+            "SELECT * FROM knowledge_form_entry_versions WHERE entry_id = $1::uuid AND version = $2",
+            id, version,
+        )
+        if not target:
+            raise HTTPException(status_code=404, detail=f"Version {version} not found for this entry.")
+
+        changed_by = getattr(request.state, "user_id", None) or "unknown"
+        new_version = entry["version"] + 1
+        target_form_data = target["form_data"] if isinstance(target["form_data"], str) else _dumps(target["form_data"])
+
+        # Snapshot the version being created now (the restored content),
+        # eagerly — same pattern as create_entry()/update_entry(). NOT a
+        # snapshot of the pre-restore version: that row already exists,
+        # and re-inserting it collides with uq_kfev_entry_version.
+        await conn.execute(
+            """INSERT INTO knowledge_form_entry_versions
+               (entry_id, version, form_data, verified_by_name, verified_date, changed_by, change_summary)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            id, new_version, target_form_data,
+            target["verified_by_name"], target["verified_date"], changed_by,
+            f"Restored from version {version}.",
+        )
+
+        await conn.execute(
+            """UPDATE knowledge_form_entries SET
+               form_data = $1, verified_by_name = $2, verified_date = $3,
+               version = $4, status = 'processing'
+               WHERE id = $5::uuid""",
+            target_form_data, target["verified_by_name"], target["verified_date"],
+            new_version, id,
+        )
+
+        from app.infrastructure.redis_client import arq_client
+        await arq_client.enqueue_process_form_entry(entry_id=id)
+
+        return {
+            "entry_id": id, "restored_from_version": version, "new_version": new_version,
+            "status": "processing",
+            "message": f"Version {version} restored as Version {new_version}. Processing started.",
+        }
+    finally:
+        await conn.close()
+
+
+# ============================================================
+# ENDPOINT 12: GET FEEDBACK SUMMARY
+# ============================================================
+
+@router.get("/{id}/feedback-summary")
+async def get_feedback_summary(id: str, _admin: str = Depends(require_it_admin)):
+    conn = await _db()
+    try:
+        entry_exists = await conn.fetchval("SELECT 1 FROM knowledge_form_entries WHERE id = $1::uuid", id)
+        if not entry_exists:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+
+        row = await conn.fetchrow(
+            """SELECT
+                 COUNT(*) FILTER (WHERE feedback_signal = 'positive') AS positive,
+                 COUNT(*) FILTER (WHERE feedback_signal = 'negative') AS negative,
+                 MAX(created_at) FILTER (WHERE feedback_signal = 'negative') AS last_negative_at
+               FROM feedback_events
+               WHERE source_form_entry_id = $1::uuid
+                 AND created_at >= NOW() - INTERVAL '30 days'""",
+            id,
+        )
+
+        positive, negative = row["positive"], row["negative"]
+        return {
+            "positive": positive, "negative": negative, "net": positive - negative,
+            "period_days": 30,
+            "last_negative_at": row["last_negative_at"].isoformat() if row["last_negative_at"] else None,
+        }
     finally:
         await conn.close()
