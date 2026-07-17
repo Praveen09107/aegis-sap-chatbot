@@ -853,6 +853,24 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 
 ---
 
+### DEC-054 — Session 27 Built: Version/Restore + Feedback-Summary Endpoints (Phases 1.8, 1.10); Real Versioning Bug Found in Already-Shipped Session 25 Code
+
+**Status:** CONFIRMED
+
+**Decision:** Closes out `IMPL_25` entirely: `GET /{id}/versions`, `POST /{id}/restore/{version}`, `GET /{id}/feedback-summary`, plus wiring the real feedback batch join into `list_entries` (previously a disclosed zero-value placeholder, per Session 25's own comment, pending this session).
+
+**Same class of table-name/column-name gap as every prior Quick Entry session, found before building, not after:** `IMPL_25`/`IMPL_29` both assume a `feedback` table with `rating`/`source_form_entry_id` columns. The real table (from the original 22-session build) is `feedback_events`, with a `feedback_signal` column (not `rating`) and, until this session, no way to link a row back to the Quick Entry that sourced the answer at all. `IMPL_29` Section 3.1 itself notes this column depends on a migration from `IMPL_28` (screenshot vision, not yet built) — added it now via migration 010 (`feedback_events.source_form_entry_id UUID NULL`) so the endpoint is genuinely queryable; it correctly reports zero counts until `IMPL_28`'s WebSocket handler starts populating the column on feedback submission.
+
+**A real, pre-existing bug in Session 25's `update_entry()`, found while building `restore_version()` against the same pattern, not introduced by this session:** both functions tried to `INSERT` a `knowledge_form_entry_versions` snapshot row for the CURRENT (about-to-be-superseded) version at the moment of update/restore. But `create_entry()` already eagerly writes a row for version 1 at creation time — so the very first publish-triggering update or restore of ANY entry hit `asyncpg.exceptions.UniqueViolationError` on `uq_kfev_entry_version`, confirmed live (`restore_version` returned a real `500` on first attempt, not a hypothetical). This bug was live in already-merged, already-"verified" Session 25 code the whole time — Session 25's own live verification exercised create/list/get/update/archive individually but apparently never a real create→publish→update-with-publish=true cycle, so it never actually collided during that pass. Fixed both functions to snapshot the NEW version being created instead (matching `create_entry()`'s existing eager-insert pattern) — every version number now gets exactly one row, written once, at the moment it becomes current, in all three code paths (create/update/restore) consistently.
+
+**Deliberately not built this session, disclosed rather than silently skipped:** negative-feedback notifications and the `admin_notifications` table (`IMPL_29` Section 3.2). `IMPL_23` Section 10 tags Phase 1.10 as sourced from both `IMPL_25` and `IMPL_29`, but Section 3.2 is a separate, larger feature (new table, alerting/cooldown logic, notification-bell UI) that belongs with the rest of `IMPL_29`'s Phase 3.x content (rate limiting, bulk import, pipeline health, gap write-back) — the same "Session 29" scope the kickoff prompt itself defers to, not this session's endpoint work.
+
+**Verified live through the real HTTP API with a real Keycloak JWT** (same `itadmin1`/`ITAdmin@123` credentials `DEC-053`'s addendum established): created a real entry, confirmed version 1 in history, restored it (version 2, genuinely re-processed to `active` via a real ARQ run), confirmed 2 versions in history with correct `change_summary` text; inserted real `feedback_events` rows and confirmed both the single-entry endpoint and `list_entries`' batch join return matching, correct aggregates; all 404 paths (nonexistent entry on all 3 endpoints) and the 409 path (restoring an archived entry) confirmed live. Full existing suite (237 tests) passes, no regressions.
+
+**Affects:** `backend/app/handlers/knowledge_entries_handler.py` (`list_entries`, `update_entry` bug fix, 3 new endpoints), `database/migrations/010_feedback_events_form_entry_link.sql` (new).
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
@@ -902,9 +920,11 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 | `IMPL_17` | DEC-015 — direct, load-bearing dependency via `call_judge()`, already correctly delegated (not a retrofit target, unlike `vision_task.py`/`retrieval_engine.py`) |
 | `IMPL_18` | DEC-004, DEC-024, DEC-036 |
 | `IMPL_21`, `IMPL_22` | DEC-025 (historical patch resolution) |
-| `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053 |
+| `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053, DEC-054 |
+| `IMPL_25` (Quick Entry API endpoints) | DEC-054 |
 | `IMPL_26`, `IMPL_27` (Quick Entry processing pipeline + chunking) | DEC-053 |
 | `IMPL_28` specifically (vision + storage) | DEC-034 |
+| `IMPL_29` Section 3.2 (negative-feedback notifications) | not yet built, deferred by DEC-054 to a future "Session 29" |
 | `FRONTEND_36-40` (Quick Entry UI) | DEC-005 |
 | `postgres_client.py`, `vault_client.py` (now dead code) | DEC-046, DEC-051, OPEN-09, OPEN-14 |
 | `docker-compose.yml` | DEC-014, DEC-024, DEC-051, DEC-052 |
