@@ -796,6 +796,59 @@ Tracing why: `AMENDMENT_INFERENCE_ARCHITECTURE.md`'s `FILE 4b` section (`backend
 
 ---
 
+### DEC-051 — PgBouncer Bypass Fixed: `aegis_pooled_role` Replaces `postgres` as PgBouncer's Backend Identity; `vault_client.py` Now Dead Code
+
+**Status:** CONFIRMED
+
+**Decision:** `POSTGRES_HOST`/`POSTGRES_PORT` in `secrets-share/.env` pointed directly at `aegis-postgres-primary:5432`, not `aegis-pgbouncer:6432` — PgBouncer's entire purpose (pooling, `DATABASES_POOL_SIZE=20`, `PGBOUNCER_MAX_CLIENT_CONN=100`) was being completely bypassed. Before correcting this, investigated directly rather than just flipping the env var: connected through PgBouncer with a real Vault-issued dynamic credential and ran `SELECT current_user` — it reported `postgres`, not the credential actually presented. Root cause: PgBouncer's `auth_type=any` only governs how it authenticates the *client* connecting to it; it always connects to the real backend using its own static `DATABASES_USER`/`DATABASES_PASSWORD` (previously `postgres`, the superuser), regardless of what the client presented. This means PgBouncer structurally cannot pool connections while passing through Vault's uniquely-named, ~hourly-rotating dynamic credentials (`OPEN-09`/`DEC-046`'s design) — every pooled query was silently running with full superuser privileges.
+
+Presented 3 resolution options directly rather than picking one silently: (1) fixed least-privilege role as PgBouncer's backend identity, (2) reconfigure PgBouncer into `auth_query` pass-through mode, (3) leave PgBouncer bypassed. Chose (1): migration 008 creates `aegis_pooled_role` (`LOGIN IN ROLE aegis_app_role`, no privileges beyond that — the same ceiling every Vault-issued dynamic role already has), with its password generated separately and never committed. `docker-compose.yml`'s `aegis-pgbouncer.DATABASES_USER`/`DATABASES_PASSWORD` point at this role instead of `postgres`. `postgres_client.py` was rewritten to a simple static-credential pool (Vault's per-request rebuild logic removed), and 10 other call sites (`ingestion_pipeline.py`, `retrieval_engine.py`, `query_intelligence.py`, `validation_engine.py`, 4 task files, 2 handlers) switched from `vault_client.get_postgres_credentials()` to the same static `POSTGRES_USER`/`POSTGRES_PASSWORD` constants.
+
+**This is a deliberate trade-off, not an oversight:** connections routed through PgBouncer lose Vault's per-request unique/auto-expiring/individually-revocable credential properties in exchange for genuine connection pooling. `vault_client.py` itself is now unused by any Postgres call site in this codebase — left in place rather than deleted, since removing infrastructure wasn't explicitly requested. See `OPEN-14`.
+
+**A second, previously-latent bug surfaced by this fix, not introduced by it:** with connections now genuinely routing through PgBouncer's `transaction` pool_mode, asyncpg's default prepared-statement cache broke immediately — `asyncpg.exceptions.DuplicatePreparedStatementError`, confirmed live, with asyncpg's own error message correctly diagnosing the pool_mode incompatibility. This was never triggered before because every connection bypassed PgBouncer entirely. Fixed by adding `statement_cache_size=0` to all 16 `asyncpg.connect()`/`asyncpg.create_pool()` call sites in the codebase (every one of them, not just the new Quick Entry code).
+
+**Verified live:** `SELECT current_user` through PgBouncer reports `aegis_pooled_role`; `SELECT rolsuper` for that role is `false`; the role is confirmed a member of `aegis_app_role` only; `/health` reports `postgres: healthy` through the application's own pool; a full Quick Entry create → process → active run succeeded end-to-end through the pooled connection.
+
+**Affects:** `database/migrations/008_pgbouncer_pooled_role.sql` (new), `docker-compose.yml` (`aegis-pgbouncer` env), `backend/app/infrastructure/postgres_client.py` (rewritten), `backend/app/infrastructure/vault_client.py` (now dead code, see `OPEN-14`), and the 16 `asyncpg` call sites listed in this session's commit.
+
+---
+
+### DEC-052 — `aegis_vision_tasks_total` Was a Fixable Multiprocess-Directory Gap, Not an Architectural Limit
+
+**Status:** CONFIRMED
+
+**Decision:** An earlier report characterized `aegis_vision_tasks_total`'s absence from `/metrics` as a "genuine architectural limit." Challenged directly rather than accepted: the correct question was whether `aegis-arq` was configured to write into the same Prometheus multiprocess directory `aegis-fastapi`'s workers use. It was not — `aegis-arq` had no `PROMETHEUS_MULTIPROC_DIR` set at all, and `aegis-fastapi`'s existing directory was a container-local path, not a shared volume, so even setting the env var alone would not have aggregated the two processes' metrics. This is the same multiprocess-mode gap already fixed once for the uvicorn workers, simply never extended to the ARQ worker process — a real, small, fixable bug, not a hard limit.
+
+Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same path in both `aegis-fastapi` and `aegis-arq`, with `PROMETHEUS_MULTIPROC_DIR` set identically in both. `aegis-fastapi`'s startup command no longer wipes this directory on boot (`rm -rf` removed) — now that the directory is shared, wiping it on one container's independent restart would destroy the other's live per-PID metric files. Trade-off, disclosed directly: stale per-PID files from long-dead processes now accumulate across restarts instead of resetting cleanly, acceptable for this project's scale.
+
+**Verified live, not just configured:** ran a real vision task through the ARQ worker (Cerebras returned a real `401` — a separate, already-open issue, `OPEN-13` — not a connectivity failure) and confirmed `aegis_vision_tasks_total{status="failed"} 1.0` genuinely appears in `aegis-fastapi`'s `/metrics` output, written by the separate ARQ worker process.
+
+**Affects:** `docker-compose.yml` (`aegis-prometheus-multiproc` volume, `aegis-fastapi`/`aegis-arq` commands and mounts).
+
+---
+
+### DEC-053 — Session 26/27 Built: Quick Entry Processing Pipeline + Chunking Engine; `IMPL_26`'s Reused Quality Scorer Doesn't Exist
+
+**Status:** CONFIRMED
+
+**Decision:** Session 25 shipped Quick Entry's create/update endpoints with `process_form_entry` enqueued via a deliberate, disclosed stub (`TODO(IMPL_26/Session 26)`) — real, currently-broken user-facing behavior (entries with `publish=true` queued a job for a function that didn't exist). Built for real: `backend/app/services/form_chunker.py` (structure-aware chunking per `IMPL_27` — error_guide/procedure/config, branch-aware step batching), `backend/app/tasks/process_form_entry.py` (the 13-stage processing task per `IMPL_26`), `backend/app/tasks/retry_partial_indexing.py`, both registered in `arq_worker.py`.
+
+**`IMPL_26`/`IMPL_23` both describe Quick Entry's quality-scoring stage as reusing an existing service from the document ingestion pipeline's "Stage 8."** Checked directly before building anything: the real `ingestion_pipeline.py` has no quality-scoring stage at all (its actual 11 stages are format validation, extraction, field detection, schema validation, content validation, chunking, embedding, Qdrant, OpenSearch, KG, registry — confirmed by reading the file, not the spec's stage-numbering claim), and no scoring formula exists anywhere in `specs/`. Asked directly rather than inventing a formula silently or silently dropping the quality gate: built a new, small heuristic scorer (`backend/app/services/quick_entry_quality.py`) — average of length adequacy, specificity (reusing the existing `query_intelligence_service.extract_sap_entities()`), and placeholder-text absence — scoped only to Quick Entry, calibrated against the existing `QUICK_ENTRY_QUALITY_THRESHOLD = 0.65`.
+
+**Other real spec-vs-reality gaps found and corrected while building, not left stale:**
+- Qdrant routing: `IMPL_26` assumes a single `aegis_knowledge` collection (the same stale assumption `DEC-050` already corrected in 4 other documents); real code routes by `content_type` to `meridian_errors`/`meridian_procedures`/`meridian_configs`, and every point needs both `content`/`identity` named vectors, not the single vector `IMPL_26`'s pseudocode uses.
+- `knowledge_gap_events` (real table name; `IMPL_26` calls it `gap_events`) had no `addressed_by_entry_id`/`addressed_at` columns for the reverse link `IMPL_26` Stage A13 needs — migration 007 already added the forward link (`knowledge_form_entries.gap_id`) but the reverse side was never added anywhere. Migration 009 completes it.
+- `CURRENT VALUES AT SONA COMSTAR:` (`IMPL_27`'s own literal chunk-text label) generalized to `CURRENT PRODUCTION VALUES:`, matching the precedent already set for the document pipeline's equivalent label (`AMENDMENT_GENERALIZATION_BACKEND.md`, `CURRENT_VALUES_AT_SONA_COMSTAR` → `CURRENT_PRODUCTION_VALUES`).
+
+**Two real bugs caught by live verification, not left for a future session to find:** (1) `retry_partial_indexing.py`'s payload-rebuild helper referenced an undefined `entry_id` name — caught when a live retry run logged `name 'entry_id' is not defined` instead of actually failing over to Qdrant/OpenSearch. (2) `arq_worker.py`'s `startup()` connected `redis_session`/`redis_queue` but never the `arq_client` singleton — process_form_entry's own partial-index/screenshot follow-up enqueues, and retry_partial_indexing's backoff re-enqueue, all call `arq_client` from *within the ARQ worker process*, which is a separate Python process from FastAPI (whose `main.py` startup connects its own copy). A live retry run crashed with `AttributeError: 'NoneType' object has no attribute 'enqueue_job'` before this was fixed. Both fixed and re-verified live.
+
+**Verified live, not just unit-tested:** a real error_guide entry processed end-to-end to `active` with 2 real chunks confirmed present in `meridian_errors` (Qdrant) and `sap_documents` (OpenSearch) with correct payloads; a simulated `partial_index` entry recovered via `retry_partial_indexing` (`qdrant_fixed: 1, os_fixed: 1`); the `knowledge_gap_events` reverse link confirmed written (`addressed_by_entry_id`/`addressed_at` set) for a gap-originated entry. 24 new unit tests added (`test_form_chunker.py`, `test_quick_entry_quality.py`); full suite (237 tests) passes.
+
+**Affects:** `backend/app/services/form_chunker.py` (new), `backend/app/services/quick_entry_quality.py` (new), `backend/app/tasks/process_form_entry.py` (new), `backend/app/tasks/retry_partial_indexing.py` (new), `backend/app/workers/arq_worker.py`, `database/migrations/009_gap_events_entry_link.sql` (new), `backend/app/config.py` (`QUICK_ENTRY_QUALITY_THRESHOLD`, `QUICK_ENTRY_DEDUP_THRESHOLD`, `CHUNK_STEPS_PER_BATCH`, `CHUNK_BRANCH_MAX_TOKENS`).
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
@@ -823,6 +876,8 @@ Tracing why: `AMENDMENT_INFERENCE_ARCHITECTURE.md`'s `FILE 4b` section (`backend
 
 **OPEN-11 — `FRONTEND_AGENT_SESSION_GUIDE_v2.md`'s own `RETROFIT STATUS` table is directly false for this checkout.** Confirmed directly (DEC-047): zero `.tsx`/frontend-component files exist anywhere in this repository's history before Session 21, yet the guide marks F01 (project scaffold) through F18 as "Already built." All 18 need their retrofit/fresh-build status individually re-audited from F01 onward, the same way `BACKEND_AGENT_SESSION_GUIDE_v4.md` already was (OPEN-02) — not just the admin sessions (F11-F14). **Blocks every frontend F-session (F01-F18) from starting as currently written.**
 
+**OPEN-14 — `vault_client.py` is now dead code, disposal not yet decided.** `DEC-051`'s PgBouncer fix moved every Postgres call site to static `POSTGRES_USER`/`POSTGRES_PASSWORD` credentials, so nothing in the codebase calls `vault_client.get_postgres_credentials()` (or anything else on that client) anymore. Left in place rather than deleted — removing infrastructure wasn't explicitly requested — but this reverses `OPEN-09`'s resolution (which built `vault_client.py` specifically to fix Postgres auth) for the pooled-connection path. Needs a decision: delete it, or keep it for a future non-pooled/direct-to-Postgres use case (e.g. a maintenance task that deliberately bypasses PgBouncer for a true per-request dynamic credential).
+
 **OPEN-12 — RESOLVED.** ~~`vision_task.py` never received the retrofit `DEC-040` announced; the already-shipped chat screenshot feature is currently broken under the live default `INFERENCE_MODE=external`.~~ Root cause corrected in `DEC-049`: not a stale-local-copy issue (checked exhaustively, including a separate D: drive clone and a Downloads-folder file — neither had it either) — `DEC-040`'s claim that the fix had been written was itself never true. Real `FILE 4b` retrofit written and applied to `backend/app/tasks/vision_task.py`: `INFERENCE_MODE` branch added, external mode routes through `call_vision_completion()` sharing `ollama_vision.py`'s circuit breaker keys. Verified live: real `401` from Cerebras (not a connection failure), 188 tests pass.
 
 **OPEN-13 — Cerebras/Groq API keys are not just "missing benchmark data" (OPEN-05) — the actual call path returns a hard `401 Unauthorized`, confirmed live.** Found during Session 23 (DEC-048) testing Quick Entry's Prerequisite 1. Every external-inference call — main reasoning, judge, and vision, across the entire application, not just vision — is currently non-functional in this environment until real values replace the placeholder `CEREBRAS_API_KEY`/`GROQ_API_KEY` in `secrets-share/.env`. `OPEN-05` remains open for the separate, narrower question of live throughput benchmarks once real keys exist. **Deliberately left open, not an oversight:** asked directly whether to supply real keys now, proceed to Session 24 with this still open, or pause — explicitly chose to proceed. Session 24 (Postgres/OpenSearch schema work) has no dependency on working inference, so this is safe to carry forward, but any session after that which needs a real model response is blocked on this until resolved.
@@ -841,11 +896,13 @@ Tracing why: `AMENDMENT_INFERENCE_ARCHITECTURE.md`'s `FILE 4b` section (`backend
 | `IMPL_17` | DEC-015 — direct, load-bearing dependency via `call_judge()`, already correctly delegated (not a retrofit target, unlike `vision_task.py`/`retrieval_engine.py`) |
 | `IMPL_18` | DEC-004, DEC-024, DEC-036 |
 | `IMPL_21`, `IMPL_22` | DEC-025 (historical patch resolution) |
-| `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034 |
+| `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053 |
+| `IMPL_26`, `IMPL_27` (Quick Entry processing pipeline + chunking) | DEC-053 |
 | `IMPL_28` specifically (vision + storage) | DEC-034 |
 | `FRONTEND_36-40` (Quick Entry UI) | DEC-005 |
-| `docker-compose.yml` | DEC-014, DEC-024 |
-| `.env` / `.env.example` | DEC-024, DEC-025, DEC-035 |
+| `postgres_client.py`, `vault_client.py` (now dead code) | DEC-046, DEC-051, OPEN-09, OPEN-14 |
+| `docker-compose.yml` | DEC-014, DEC-024, DEC-051, DEC-052 |
+| `.env` / `.env.example` | DEC-024, DEC-025, DEC-035, DEC-051 |
 | `src/components/shared/EmployeeTopbar.tsx`, `LoadingScreen.tsx`; `src/components/chat/ChatEmptyState.tsx`; `src/app/layout.tsx`; `src/lib/utils.ts` (formatDateIST/formatISTDate) | DEC-035 |
 | `AEGIS_DOCUMENT_TEMPLATES.md` (frozen) / `docs/DOCUMENT_AUTHORING_TEMPLATE.md` (new, generalized) | DEC-036 |
 | `docs/DEMO_CONTENT_GUIDE.md` | DEC-016, DEC-036 |
