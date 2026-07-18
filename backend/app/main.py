@@ -81,6 +81,23 @@ app = FastAPI(
     docs_url="/docs" if ENVIRONMENT == "demo" else None,
 )
 
+# Malformed JSON request bodies (any endpoint calling request.json()) would
+# otherwise surface as an unhandled 500 — confirmed live during Quick Entry
+# verification. IMPL_25 documents "400 Bad Request: Malformed JSON body" as
+# an expected response for its own create endpoint, but the gap is systemic
+# (Starlette's Request.json() raises json.JSONDecodeError uncaught by
+# default), not specific to that one route — fixed globally here rather
+# than wrapped per-endpoint.
+import json as _json_module
+from fastapi.responses import JSONResponse
+from fastapi import Request as _Request
+
+
+@app.exception_handler(_json_module.JSONDecodeError)
+async def json_decode_error_handler(request: _Request, exc: _json_module.JSONDecodeError):
+    return JSONResponse(status_code=400, content={"detail": "Malformed JSON body."})
+
+
 # ============================================================
 # Register middleware in REVERSE execution order
 # (Starlette executes middleware in reverse registration order)

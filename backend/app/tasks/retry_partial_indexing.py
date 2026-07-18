@@ -49,6 +49,10 @@ async def _rebuild_payload(entry, chunk_row, section_screenshots: dict) -> dict:
     entities = query_intelligence_service.extract_sap_entities(chunk_row["chunk_text"])
     screenshot_ids = section_screenshots.get(chunk_row["chunk_type"], [])
     return {
+        # See process_form_entry.py's identical comment: chunk_id is
+        # required for retrieval (_stage5_rrf_fusion drops payloads
+        # without it) — reuses the shared Qdrant/OpenSearch point_id.
+        "chunk_id": str(chunk_row["qdrant_point_id"]),
         "text": chunk_row["chunk_text"],
         "chunk_text": chunk_row["chunk_text"],
         "document_id": entry["document_id"],

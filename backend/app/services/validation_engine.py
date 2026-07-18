@@ -465,7 +465,44 @@ def assign_confidence_badge(validation_score: float) -> str:
         return "none"
 
 
-def build_attribution_panel(
+async def _fetch_screenshot_metadata(screenshot_ids: List[str]) -> List[dict]:
+    """
+    Batch-fetches proxy-ready metadata for the given screenshot IDs
+    (IMPL_28 Section 5.1). Deduped by URL, capped at 5 per
+    IMPL_28 Section 5.2's "Maximum screenshots in one answer response: 5".
+    """
+    import asyncpg
+    from app.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+
+    conn = await asyncpg.connect(
+        host=POSTGRES_HOST, port=POSTGRES_PORT, database=POSTGRES_DB,
+        user=POSTGRES_USER, password=POSTGRES_PASSWORD, statement_cache_size=0,
+    )
+    try:
+        rows = await conn.fetch(
+            """SELECT id, associated_section, minio_object_key, admin_caption
+               FROM knowledge_form_screenshots
+               WHERE id = ANY($1::uuid[]) AND vision_status IN ('complete', 'pending')
+               ORDER BY created_at ASC""",
+            screenshot_ids,
+        )
+    finally:
+        await conn.close()
+
+    seen_urls = set()
+    screenshots = []
+    for row in rows:
+        url = f"/api/screenshots/{row['minio_object_key']}"
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        screenshots.append({"url": url, "caption": row["admin_caption"], "section": row["associated_section"]})
+        if len(screenshots) >= 5:
+            break
+    return screenshots
+
+
+async def build_attribution_panel(
     chunks: List[RetrievedChunk],
     confidence_badge: str,
 ) -> dict:
@@ -478,6 +515,8 @@ def build_attribution_panel(
             "verified_date": "unknown",
             "secondary_sources": [],
             "confidence_badge": confidence_badge,
+            "form_entry_id": None,
+            "screenshots": [],
         }
 
     primary = chunks[0]
@@ -494,6 +533,19 @@ def build_attribution_panel(
             })
             seen_docs.add(chunk.document_id)
 
+    # IMPL_28 Section 5.1/5.2: form_entry_id is set only when the primary
+    # (top-ranked) source is a Quick Entry chunk; null for document-sourced
+    # answers. Screenshots are collected across ALL retrieved chunks, not
+    # just the primary — a lower-ranked secondary source may still be the
+    # one with the relevant screenshot attached.
+    form_entry_id = primary.form_entry_id if primary.source_type == "form_entry" else None
+
+    all_screenshot_ids: List[str] = []
+    for chunk in chunks:
+        all_screenshot_ids.extend(chunk.screenshot_ids or [])
+
+    screenshots = await _fetch_screenshot_metadata(all_screenshot_ids) if all_screenshot_ids else []
+
     return {
         "primary_document_id": primary.document_id,
         "primary_document_name": primary.document_id,  # Full name added by ingestion pipeline
@@ -501,6 +553,8 @@ def build_attribution_panel(
         "verified_date": primary.last_verified_date,
         "secondary_sources": secondary,
         "confidence_badge": confidence_badge,
+        "form_entry_id": form_entry_id,
+        "screenshots": screenshots,
     }
 
 
@@ -570,7 +624,7 @@ class ValidationEngine:
         badge = assign_confidence_badge(validation_score)
 
         # ── Attribution Panel ────────────────────────────────────
-        attribution_panel = build_attribution_panel(chunks, badge)
+        attribution_panel = await build_attribution_panel(chunks, badge)
 
         result = ValidationResult(
             validation_score=validation_score,

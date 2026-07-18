@@ -111,6 +111,7 @@ class RetrievalEngine:
                 query_vector=query_vector,
                 vector_name=QDRANT_VECTOR_CONTENT,
                 limit=QDRANT_SEARCH_LIMIT,
+                exclude_conditions={"is_current": False},
             )
             for collection in collections_to_search
         ]
@@ -167,6 +168,7 @@ class RetrievalEngine:
                 query_vector=identity_vector,
                 vector_name=QDRANT_VECTOR_IDENTITY,
                 limit=QDRANT_SEARCH_LIMIT,
+                exclude_conditions={"is_current": False},
             )
             for collection in collections_to_search
         ]
@@ -436,10 +438,14 @@ class RetrievalEngine:
                     content_type=payload.get("content_type", ""),
                     chunk_type=payload.get("chunk_type", ""),
                     chunk_text=payload.get("chunk_text", ""),
-                    last_verified_date=payload.get("last_verified_date", ""),
+                    last_verified_date=payload.get("last_verified_date", "") or payload.get("verified_date", ""),
                     verified_by=payload.get("verified_by", ""),
                     cross_encoder_score=0.0,
                     rrf_score=chunk_scores[chunk_id],
+                    source_type=payload.get("source_type", ""),
+                    form_entry_id=payload.get("form_entry_id"),
+                    has_screenshots=payload.get("has_screenshots", False),
+                    screenshot_ids=payload.get("screenshot_ids", []),
                 )
             )
 

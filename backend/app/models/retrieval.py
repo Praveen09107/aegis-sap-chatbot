@@ -51,6 +51,14 @@ class RetrievedChunk:
     verified_by: str
     cross_encoder_score: float
     rrf_score: float
+    # IMPL_28 Section 5 — screenshot surfacing. source_type/form_entry_id
+    # are None/"" for document-pipeline chunks (which never set them in
+    # their Qdrant payload); has_screenshots/screenshot_ids default to
+    # empty for the same reason.
+    source_type: str = ""
+    form_entry_id: Optional[str] = None
+    has_screenshots: bool = False
+    screenshot_ids: List[str] = field(default_factory=list)
 
 
 @dataclass

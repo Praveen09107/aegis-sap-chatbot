@@ -79,10 +79,18 @@ class AegisOpenSearchClient:
         if document_id_filter:
             filter_clauses.append({"term": {"document_id": document_id_filter}})
 
+        # Excludes retired Quick Entry chunk versions (is_current explicitly
+        # False). Documents that never set the field (document-pipeline
+        # chunks) are unaffected — must_not on a missing field never matches,
+        # so those docs still pass. Mirrors qdrant_client.search_content's
+        # exclude_conditions for the same is_current invariant.
+        must_not_clauses = [{"term": {"is_current": False}}]
+
         search_body = {
             "query": {
                 "bool": {
                     "must": must_clauses,
+                    "must_not": must_not_clauses,
                     "filter": filter_clauses if filter_clauses else [],
                 }
             },

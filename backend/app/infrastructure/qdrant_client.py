@@ -65,17 +65,28 @@ class AegisQdrantClient:
         vector_name: str = QDRANT_VECTOR_CONTENT,
         limit: int = QDRANT_SEARCH_LIMIT,
         filter_conditions: Optional[Dict[str, Any]] = None,
+        exclude_conditions: Optional[Dict[str, Any]] = None,
     ) -> List[Dict]:
         """
         Search a content collection using a named vector.
         Returns list of dicts with id, score, and payload.
+
+        exclude_conditions excludes points matching the given field=value
+        (must_not), unlike filter_conditions (must). Points that never set
+        the field at all still match — only an explicit value is excluded.
+        Used for is_current=False so retired Quick Entry chunk versions
+        never surface, without affecting document-pipeline chunks that
+        don't set is_current at all.
         """
         search_filter = None
-        if filter_conditions:
-            conditions = []
-            for field, value in filter_conditions.items():
-                conditions.append(FieldCondition(key=field, match=MatchValue(value=value)))
-            search_filter = Filter(must=conditions)
+        if filter_conditions or exclude_conditions:
+            must_conditions = []
+            for field, value in (filter_conditions or {}).items():
+                must_conditions.append(FieldCondition(key=field, match=MatchValue(value=value)))
+            must_not_conditions = []
+            for field, value in (exclude_conditions or {}).items():
+                must_not_conditions.append(FieldCondition(key=field, match=MatchValue(value=value)))
+            search_filter = Filter(must=must_conditions or None, must_not=must_not_conditions or None)
 
         results = await self.client.search(
             collection_name=collection_name,

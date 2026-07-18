@@ -286,6 +286,16 @@ async def _process(conn, entry_id: str) -> dict:
         chunk["point_id"] = point_id
 
         payload = {
+            # Required for retrieval: _stage5_rrf_fusion (retrieval_engine.py)
+            # drops any chunk whose payload has no chunk_id at all — Quick
+            # Entry chunks previously had none, meaning no Quick Entry
+            # content was ever retrievable by any employee query, confirmed
+            # live (empirically checked a real point's payload keys) during
+            # Session 25-29 re-verification. point_id is already the shared
+            # identifier between Qdrant and OpenSearch for these chunks
+            # (OpenSearch's own document already used it as chunk_id), so
+            # it's reused here rather than inventing a second ID scheme.
+            "chunk_id": point_id,
             "text": chunk["text"],
             "chunk_text": chunk["text"],
             "document_id": entry["document_id"],
@@ -360,6 +370,7 @@ async def _process(conn, entry_id: str) -> dict:
                 "version": entry["version"],
                 "chunk_type": chunk["chunk_type"],
                 "has_screenshots": chunk["has_screenshots"],
+                "screenshot_ids": chunk["screenshot_ids"],
                 "is_stale": False,
                 "original_quality_score": chunk["original_quality_score"],
             })

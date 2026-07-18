@@ -60,11 +60,25 @@ def _extract_pdf_text(file_bytes: bytes) -> Optional[str]:
 
 
 def _extract_between(text: str, start_label: str, end_labels: List[str]) -> Optional[str]:
-    """Extract text between start_label and the first matching end_label (or end of text)."""
-    end_alternation = "|".join(re.escape(e) for e in end_labels) if end_labels else r"\Z"
+    """
+    Extract text between start_label and the first matching end_label (or
+    end of text). Anchored to the start of a line, case-sensitive on the
+    label itself — matching this codebase's own established field-label
+    convention (ingestion_pipeline.py's FIELD_LABEL_PATTERN: an uppercase
+    label at the start of a line, followed by a colon).
+
+    Two weaker versions of this were each confirmed live, in order: a bare
+    substring search matched "DESCRIPTION" inside "ISSUE_DESCRIPTION"
+    (fixed with \b) — then, still case-insensitive, it matched the ordinary
+    English word "description" appearing inside another field's own value
+    text ("issue description text here"), since prose can legitimately
+    contain a label's word in lowercase. Only a real label — uppercase, at
+    the start of its own line — can be trusted as a field boundary.
+    """
+    end_alternation = "|".join(r"^" + re.escape(e) + r"\s*:" for e in end_labels) if end_labels else r"\Z"
     pattern = re.compile(
-        re.escape(start_label) + r"\s*:?\s*\n?(.*?)(?=" + end_alternation + r"|\Z)",
-        re.IGNORECASE | re.DOTALL,
+        r"^" + re.escape(start_label) + r"\s*:\s*\n?(.*?)(?=" + end_alternation + r"|\Z)",
+        re.MULTILINE | re.DOTALL,
     )
     match = pattern.search(text)
     if not match:
@@ -75,7 +89,15 @@ def _extract_between(text: str, start_label: str, end_labels: List[str]) -> Opti
 
 def detect_content_type(text: str) -> Optional[str]:
     text_upper = text.upper()
-    if "CAUSE_DESCRIPTION" in text_upper or "CAUSE DESCRIPTION" in text_upper:
+    # error_guide detection previously keyed on CAUSE_DESCRIPTION/
+    # ISSUE_DESCRIPTION — neither exists anywhere in the real frozen
+    # AEGIS_DOCUMENT_TEMPLATES.md error_guide structure (confirmed by
+    # reading the actual template, not IMPL_29's own pseudocode, which was
+    # wrong about this). WHEN_THIS_OCCURS is real, always-required, and
+    # error_guide-specific (procedure/config templates don't use it) — a
+    # malformed cause block no longer makes the whole document
+    # undetectable, since this field lives outside the repeating block.
+    if "WHEN_THIS_OCCURS" in text_upper:
         return "error_guide"
     if "PROCEDURE_NAME" in text_upper or "PHASE_NAME" in text_upper:
         return "procedure"
@@ -85,40 +107,53 @@ def detect_content_type(text: str) -> Optional[str]:
 
 
 def _extract_cause_blocks(text: str) -> List[dict]:
+    """
+    The real frozen AEGIS_DOCUMENT_TEMPLATES.md error_guide structure
+    (verified directly, not from IMPL_29's own pseudocode — confirmed
+    wrong by that cross-check) uses per-cause-prefixed labels:
+    CAUSE_N: [short name], CAUSE_N_HOW_TO_IDENTIFY:,
+    CAUSE_N_RESOLUTION_STEPS: — there is no shared CAUSE_DESCRIPTION/
+    HOW_TO_IDENTIFY/RESOLUTION_STEPS trio reused per block. The cause's
+    own short name (given directly on the CAUSE_N: line) is the closest
+    available source for Quick Entry's cause_description field.
+    """
     causes = []
-    cause_pattern = re.compile(
-        r"CAUSE_(\d+).*?CAUSE_DESCRIPTION\s*:?\s*\n?(.*?)"
-        r"HOW_TO_IDENTIFY\s*:?\s*\n?(.*?)"
-        r"RESOLUTION_STEPS\s*:?\s*\n?(.*?)"
-        r"(?=CAUSE_\d+|SUCCESS_INDICATOR|\Z)",
-        re.IGNORECASE | re.DOTALL,
-    )
-    for match in cause_pattern.finditer(text):
-        causes.append({
-            "cause_number": int(match.group(1)),
-            "priority": "common",
-            "cause_description": match.group(2).strip(),
-            "how_to_identify": match.group(3).strip(),
-            "resolution_steps": match.group(4).strip(),
-            "resolution_requires_admin": False,
-            "cause_obsolete": False,
-            "obsolete_reason": "",
-            "screenshot_ids": [],
-        })
+    cause_number_pattern = re.compile(r"^CAUSE_(\d+)\s*:\s*(.*?)\s*$", re.MULTILINE)
+    for m in cause_number_pattern.finditer(text):
+        n = m.group(1)
+        short_name = m.group(2).strip()
+        how_to_identify = _extract_between(text, f"CAUSE_{n}_HOW_TO_IDENTIFY", [f"CAUSE_{n}_RESOLUTION_STEPS"])
+        resolution_steps = _extract_between(
+            text, f"CAUSE_{n}_RESOLUTION_STEPS",
+            [f"CAUSE_{n}_RELATED_CONFIG", f"CAUSE_{int(n) + 1}", "SUCCESS_INDICATOR"],
+        )
+        if short_name or how_to_identify or resolution_steps:
+            causes.append({
+                "cause_number": int(n),
+                "priority": "common",
+                "cause_description": short_name,
+                "how_to_identify": how_to_identify or "",
+                "resolution_steps": resolution_steps or "",
+                "resolution_requires_admin": False,
+                "cause_obsolete": False,
+                "obsolete_reason": "",
+                "screenshot_ids": [],
+            })
     return causes
 
 
 def parse_error_guide(text: str) -> dict:
+    # issue_description, error_message, and description have no
+    # corresponding source field anywhere in the real frozen error_guide
+    # template (confirmed directly against AEGIS_DOCUMENT_TEMPLATES.md,
+    # not assumed from IMPL_29's pseudocode) — always left for
+    # unparsed_sections to flag, not guessed at.
     parsed = {
-        "issue_description": _extract_between(text, "ISSUE_DESCRIPTION", ["DOCUMENT_ID", "MODULE", "TRANSACTIONS", "ERROR_CODE"]),
-        "error_code": _extract_between(text, "ERROR_CODE", ["ERROR_MESSAGE", "DESCRIPTION"]),
-        "error_message": _extract_between(text, "ERROR_MESSAGE", ["DESCRIPTION", "WHEN_THIS_OCCURS"]),
-        "description": _extract_between(text, "DESCRIPTION", ["WHEN_THIS_OCCURS", "CAUSE_1"]),
+        "error_code": _extract_between(text, "ERROR_CODE", ["TRANSACTIONS", "WHEN_THIS_OCCURS"]),
         "when_this_occurs": _extract_between(text, "WHEN_THIS_OCCURS", ["CAUSE_1"]),
-        "success_indicator": _extract_between(text, "SUCCESS_INDICATOR", ["ESCALATION_CRITERIA"]),
-        "escalation_criteria": _extract_between(text, "ESCALATION_CRITERIA", ["ADMIN_STEPS"]),
-        "admin_steps": _extract_between(text, "ADMIN_STEPS", ["NOTES", "LAST_VERIFIED_DATE"]),
-        "notes": _extract_between(text, "NOTES", ["LAST_VERIFIED_DATE", "VERIFIED_BY"]),
+        "success_indicator": _extract_between(text, "SUCCESS_INDICATOR", ["ADMIN_STEPS", "ESCALATION_CRITERIA"]),
+        "admin_steps": _extract_between(text, "ADMIN_STEPS", ["ESCALATION_CRITERIA", "RELATED_ERRORS", "LAST_VERIFIED_DATE"]),
+        "escalation_criteria": _extract_between(text, "ESCALATION_CRITERIA", ["RELATED_ERRORS", "LAST_VERIFIED_DATE"]),
     }
     causes = _extract_cause_blocks(text)
     if causes:
@@ -127,7 +162,9 @@ def parse_error_guide(text: str) -> dict:
 
 
 def _extract_steps(text: str) -> List[dict]:
-    step_pattern = re.compile(r"STEP_(\d+)\s*:?\s*\n?(.*?)(?=STEP_\d+|VERIFICATION_STEPS|\Z)", re.IGNORECASE | re.DOTALL)
+    # Same line-start, case-sensitive anchoring as _extract_between/
+    # _extract_cause_blocks, for consistency and the same reason.
+    step_pattern = re.compile(r"^STEP_(\d+)\s*:\s*\n?(.*?)(?=^STEP_\d+\s*:|^VERIFICATION_STEPS\s*:|\Z)", re.MULTILINE | re.DOTALL)
     steps = []
     for match in step_pattern.finditer(text):
         action = match.group(2).strip()
@@ -142,7 +179,7 @@ def parse_procedure(text: str) -> dict:
         "purpose": _extract_between(text, "PURPOSE", ["WHEN_TO_USE"]),
         "when_to_use": _extract_between(text, "WHEN_TO_USE", ["PREREQUISITES", "TRANSACTIONS"]),
         "data_required": _extract_between(text, "PREREQUISITES", ["TRANSACTIONS", "PHASE_NAME"]),
-        "verification": _extract_between(text, "VERIFICATION_STEPS", ["COMMON_ERRORS"]),
+        "verification": _extract_between(text, "VERIFICATION_STEPS", ["COMMON_ERRORS_IN_THIS_PROCEDURE"]),
         "plant_notes": _extract_between(text, "POST_COMPLETION_NOTES", ["LAST_VERIFIED_DATE", "VERIFIED_BY"]),
     }
     steps = _extract_steps(text)

@@ -181,17 +181,39 @@ class TestSentenceSplitting:
 
 
 class TestAttributionPanel:
-    def test_primary_document_from_first_chunk(self):
+    @pytest.mark.asyncio
+    async def test_primary_document_from_first_chunk(self):
         chunks = [make_chunk("SD-ERR-001"), make_chunk("SD-PROC-001")]
-        panel = build_attribution_panel(chunks, "green")
+        panel = await build_attribution_panel(chunks, "green")
         assert panel["primary_document_id"] == "SD-ERR-001"
         assert panel["confidence_badge"] == "green"
 
-    def test_secondary_sources_populated(self):
+    @pytest.mark.asyncio
+    async def test_secondary_sources_populated(self):
         chunks = [make_chunk("SD-ERR-001"), make_chunk("SD-PROC-001"), make_chunk("FI-CFG-003")]
-        panel = build_attribution_panel(chunks, "amber")
+        panel = await build_attribution_panel(chunks, "amber")
         assert len(panel["secondary_sources"]) <= 2
 
-    def test_empty_chunks_handled(self):
-        panel = build_attribution_panel([], "none")
+    @pytest.mark.asyncio
+    async def test_empty_chunks_handled(self):
+        panel = await build_attribution_panel([], "none")
         assert panel["primary_document_id"] == "unknown"
+        assert panel["form_entry_id"] is None
+        assert panel["screenshots"] == []
+
+    @pytest.mark.asyncio
+    async def test_document_sourced_chunk_has_no_form_entry_id(self):
+        # source_type defaults to "" (document-pipeline chunks never set it),
+        # so form_entry_id must be None even if the chunk happens to carry
+        # screenshot_ids from stale test data.
+        chunks = [make_chunk("SD-ERR-001")]
+        panel = await build_attribution_panel(chunks, "green")
+        assert panel["form_entry_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_form_entry_sourced_chunk_sets_form_entry_id(self):
+        chunk = make_chunk("SD-ERR-001")
+        chunk.source_type = "form_entry"
+        chunk.form_entry_id = "11111111-1111-1111-1111-111111111111"
+        panel = await build_attribution_panel([chunk], "green")
+        assert panel["form_entry_id"] == "11111111-1111-1111-1111-111111111111"
