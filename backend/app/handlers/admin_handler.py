@@ -119,18 +119,54 @@ async def get_knowledge_gaps(request: Request, days: int = 7, _: str = Depends(r
     try:
         cutoff_7d = datetime.utcnow() - timedelta(days=7)
         cutoff_30d = datetime.utcnow() - timedelta(days=30)
+        # IMPL_29 Section 4.2 assumes a per-gap-event response shape
+        # (one addressed_by_entry_id per list item). The real endpoint
+        # (pre-existing) is clustered by gap_description, aggregating
+        # potentially many individual gap_events into one row — there's no
+        # single natural "id" to attach write-back status to. Resolved by
+        # picking the most recently occurred event in the cluster as the
+        # representative gap_id (used for the "Create Quick Entry" link's
+        # ?gap_id= param), and separately surfacing whether ANY event in
+        # the cluster has been addressed, with that event's own details.
         rows = await conn.fetch(
-            """SELECT gap_description,
-               COUNT(*) FILTER (WHERE occurred_at >= $1) as count_7d,
-               COUNT(*) FILTER (WHERE occurred_at >= $2) as count_30d,
-               array_agg(DISTINCT query_text) as example_queries
-               FROM knowledge_gap_events WHERE occurred_at >= $2
-               GROUP BY gap_description HAVING COUNT(*) FILTER (WHERE occurred_at >= $1) > 0
-               ORDER BY count_7d DESC LIMIT 20""",
+            """WITH clustered AS (
+                 SELECT gap_description,
+                        COUNT(*) FILTER (WHERE occurred_at >= $1) as count_7d,
+                        COUNT(*) FILTER (WHERE occurred_at >= $2) as count_30d,
+                        array_agg(DISTINCT query_text) as example_queries,
+                        (array_agg(id ORDER BY occurred_at DESC))[1] as representative_gap_id,
+                        bool_or(addressed_by_entry_id IS NOT NULL) as any_addressed,
+                        (array_agg(addressed_by_entry_id ORDER BY addressed_at DESC NULLS LAST))[1] as latest_addressed_entry_id,
+                        (array_agg(addressed_at ORDER BY addressed_at DESC NULLS LAST))[1] as latest_addressed_at
+                 FROM knowledge_gap_events WHERE occurred_at >= $2
+                 GROUP BY gap_description HAVING COUNT(*) FILTER (WHERE occurred_at >= $1) > 0
+               )
+               SELECT c.*, kfe.document_id as addressed_document_id, kfe.form_data as addressed_form_data,
+                      kfe.content_type as addressed_content_type
+               FROM clustered c
+               LEFT JOIN knowledge_form_entries kfe ON kfe.id = c.latest_addressed_entry_id
+               ORDER BY c.count_7d DESC LIMIT 20""",
             cutoff_7d, cutoff_30d)
-        return {"clusters": [{"entity_combination": r["gap_description"][:80], "gap_description": r["gap_description"],
-                               "count_7d": r["count_7d"], "count_30d": r["count_30d"],
-                               "example_queries": list(r["example_queries"])[:3]} for r in rows]}
+
+        import json
+        from app.handlers.knowledge_entries_handler import _extract_issue_title
+
+        clusters = []
+        for r in rows:
+            addressed_title = None
+            if r["any_addressed"] and r["addressed_form_data"]:
+                form_data = json.loads(r["addressed_form_data"]) if isinstance(r["addressed_form_data"], str) else r["addressed_form_data"]
+                addressed_title = _extract_issue_title(form_data, r["addressed_content_type"])
+            clusters.append({
+                "entity_combination": r["gap_description"][:80], "gap_description": r["gap_description"],
+                "count_7d": r["count_7d"], "count_30d": r["count_30d"],
+                "example_queries": list(r["example_queries"])[:3],
+                "gap_id": str(r["representative_gap_id"]),
+                "addressed_by_entry_id": str(r["latest_addressed_entry_id"]) if r["any_addressed"] else None,
+                "addressed_at": r["latest_addressed_at"].isoformat() if r["latest_addressed_at"] else None,
+                "addressed_entry_title": addressed_title,
+            })
+        return {"clusters": clusters}
     finally:
         await conn.close()
 

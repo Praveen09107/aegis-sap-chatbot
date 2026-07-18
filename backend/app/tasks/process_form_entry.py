@@ -404,8 +404,11 @@ async def _process(conn, entry_id: str) -> dict:
     log.record_stage("screenshot_enrichment", queued=screenshots_queued, screenshot_count=len(screenshots))
 
     if entry["gap_id"]:
+        # Idempotent per IMPL_29 Section 4.1 — a later re-processing of this
+        # same entry (e.g. a version bump) must not overwrite an earlier,
+        # genuine addressed_at with a newer one.
         await conn.execute(
-            "UPDATE knowledge_gap_events SET addressed_by_entry_id = $1, addressed_at = NOW() WHERE id = $2",
+            "UPDATE knowledge_gap_events SET addressed_by_entry_id = $1, addressed_at = NOW() WHERE id = $2 AND addressed_by_entry_id IS NULL",
             entry_id, entry["gap_id"],
         )
 
