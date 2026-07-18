@@ -76,6 +76,10 @@ class MinioClient:
                 response.release_conn()
         return await asyncio.to_thread(_fetch)
 
+    async def remove_object(self, bucket: str, object_key: str) -> None:
+        """Deletes a single object by its exact key."""
+        await asyncio.to_thread(self._client.remove_object, bucket, object_key)
+
     async def delete_prefix(self, bucket: str, prefix: str) -> int:
         """Deletes all objects under a key prefix. Used for reingestion cleanup and deletion cascades."""
         objects = await asyncio.to_thread(

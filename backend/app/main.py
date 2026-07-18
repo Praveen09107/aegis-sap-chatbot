@@ -103,9 +103,12 @@ app.add_middleware(
 from app.handlers.admin_handler import router as admin_router
 from app.handlers.upload_handler import router as upload_router
 from app.handlers.knowledge_entries_handler import router as knowledge_entries_router
+from app.handlers.knowledge_screenshots_handler import admin_router as knowledge_screenshots_router, serve_router as screenshots_serve_router
 app.include_router(admin_router)
 app.include_router(upload_router)
 app.include_router(knowledge_entries_router)
+app.include_router(knowledge_screenshots_router)
+app.include_router(screenshots_serve_router)
 
 
 @app.get("/health")

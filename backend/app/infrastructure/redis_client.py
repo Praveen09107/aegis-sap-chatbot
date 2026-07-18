@@ -440,15 +440,18 @@ class ARQTaskClient:
         job = await self._pool.enqueue_job("retry_partial_indexing", **kwargs)
         return job.job_id
 
-    async def enqueue_screenshot_enrichment(self, *, entry_id: str, version: int) -> str:
+    async def enqueue_screenshot_enrichment(self, *, entry_id: str, version: int, target_screenshot_id: str = None) -> str:
         """
-        Enqueue screenshot vision enrichment. IMPL_28 (the vision pipeline
-        that registers this task) hasn't been built yet — same safe-enqueue
-        behavior as enqueue_process_form_entry before Session 26 existed.
-        No screenshot upload endpoint exists yet either, so in practice this
-        is never called today; kept ready for when IMPL_28 lands.
+        Enqueue screenshot vision enrichment. Bulk mode (target_screenshot_id
+        omitted) merges already-extracted screenshot text into freshly
+        created chunks after a publish. Retry mode (target_screenshot_id set,
+        from the retry-vision endpoint) re-runs vision for one screenshot
+        whose extraction previously failed.
         """
-        job = await self._pool.enqueue_job("enrich_entry_screenshots", entry_id=entry_id, version=version)
+        kwargs = {"entry_id": entry_id, "version": version}
+        if target_screenshot_id:
+            kwargs["target_screenshot_id"] = target_screenshot_id
+        job = await self._pool.enqueue_job("enrich_entry_screenshots", **kwargs)
         return job.job_id
 
 
