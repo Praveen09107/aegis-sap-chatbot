@@ -871,6 +871,26 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 
 ---
 
+### DEC-055 — Session 28 Built: Screenshot Pipeline (Phase 2 Complete); `classify_sap()` Has No Confidence Signal, Rejection Derived From Extraction Instead
+
+**Status:** CONFIRMED
+
+**Decision:** All 5 sub-parts of Phase 2 built: upload endpoint (2.2), `enrich_entry_screenshots` ARQ task (2.3), lifecycle cleanup job (2.4), the internal screenshot-serving route (2.5), reusing the existing, already Cerebras/Groq-routed vision client (`app/clients/ollama_vision.py`) per `AMENDMENT_INFERENCE_ARCHITECTURE.md` FILE 8 — no separate vision client built, no self-hosted model hardcoded. Confirmed via grep (both case-insensitive, both zero results, not just "only in explanatory comments" — reworded two docstring mentions that would otherwise have technically matched): `llava` and `VISION_SERVICE_URL` do not appear anywhere in this session's files.
+
+**The single largest real gap this session, resolved by direct confirmation before writing any upload code:** `IMPL_28`'s upload flow rejects screenshots below `VISION_SAP_CONFIDENCE_THRESHOLD` using `classify_sap()`'s claimed `{is_sap, confidence, reason}` response. The real, reused `classify_sap()` (built by `IMPL_13`, already retrofitted to Cerebras/Groq per `DEC-038`/`DEC-040`/`AMENDMENT_INFERENCE_ARCHITECTURE.md` FILE 4) returns a `SAPScreenshotType` enum instead — which of 5 SAP screen categories an image is — and always succeeds (falls back to `TRANSACTION_SCREEN` on any failure, never signals "this isn't SAP at all"). Building the confidence gate as spec'd was structurally impossible without either modifying the shared client (against the session's own explicit "reuse, don't duplicate" constraint) or writing a second, separate vision call (exactly what that constraint forbids). Presented 3 resolution options directly; chosen: derive the rejection signal from `extract_sap_content()`'s own output instead — a completely empty extraction (no error codes, t-codes, field names/values, screen title, or message text) sets `vision_status='not_sap'`, a real DB enum value from `IMPL_24`'s original schema that was otherwise permanently dead. `vision_confidence` is stored as `NULL` — no real confidence number exists to report, and none is fabricated.
+
+**A second, internal inconsistency found within `IMPL_28` itself, not a reality-mismatch this time:** Section 3 has the upload endpoint run vision extraction *synchronously*, reaching `vision_status='complete'` immediately — before any chunk exists, since chunks are only created at publish time. Section 4's `enrich_entry_screenshots` bulk-mode query (`WHERE vision_status='pending'`) would therefore find nothing to process in the normal case; the two sections' assumptions don't reconcile as written. Resolved by redesigning the task's actual job: bulk mode merges each screenshot's *already-extracted* text (from the synchronous upload step) into the chunk that now exists for its section, rather than re-running vision — vision only genuinely re-runs in retry mode (a specific `target_screenshot_id`, the case where extraction previously failed and there is no usable prior text to merge).
+
+**A real bug avoided by using the correct Qdrant primitive, not found via a live failure this time:** the enrichment merge needed to update a chunk's `text` field and its content vector after re-embedding, while leaving the rest of the point's payload (`document_id`, `module`, `quality_score`, `source_type`, etc. — none of which are mirrored in Postgres, only in Qdrant) untouched. A raw `upsert()` (IMPL_28's own pseudocode) would have silently replaced the entire payload with just the two updated fields, wiping everything else — confirmed by reading Qdrant's real API semantics before writing the call, not discovered by breaking it live. Added `AegisQdrantClient.update_vectors()` (new wrapper method, partial vector update only) and used it together with the already-existing `set_payload()` (partial payload update only) instead of a single `upsert()`.
+
+**A third, unrelated-but-adjacent real bug found and fixed while wiring up scheduling for the new cleanup job:** `nightly_cleanup` (the pre-existing cache-cleanup ARQ task, present since the original build) was never actually scheduled anywhere in this codebase — no APScheduler dependency, no ARQ `cron_jobs` entry, confirmed by grep. It was only ever callable on-demand via manual enqueue, despite `AEGIS_MASTER_REFERENCE.md` describing it as a running nightly job. Fixed alongside adding real scheduling for the new `cleanup_eligible_screenshots` job, using ARQ's own native `cron()` support (not `IMPL_28`'s assumed APScheduler, which isn't installed) — both now genuinely scheduled (19:00 UTC / 00:30 IST for cache, 19:30 UTC / 01:00 IST for screenshots, matching `IMPL_28` Section 7.2's stated time).
+
+**Verified live through the real HTTP API:** upload correctly returned a `422` rejection for a genuinely non-SAP synthetic test image; confirmed via container logs that this exercised real HTTP calls to both `api.groq.com` and `api.cerebras.ai` (both `401 Unauthorized` — `OPEN-13`'s already-known, deliberately-left-open placeholder-key blocker, not a defect introduced here; the same failure-handling pattern already validated for `aegis_vision_tasks_total` in `DEC-052`). Verified the MinIO/proxy portion of the round trip independently of the blocked vision calls: `put_object`→proxy `GET` returned the byte-identical image (confirmed via `cmp`), `401` without auth, `200` with; `DELETE` removed both the MinIO object and the DB row, and the proxy correctly `404`s afterward. 8 new unit tests for the pure formatting/rejection-heuristic functions; full suite (245 tests) passes; `docker compose config` valid; all containers healthy.
+
+**Affects:** `backend/app/handlers/knowledge_screenshots_handler.py` (new), `backend/app/tasks/enrich_entry_screenshots.py` (new), `backend/app/tasks/cleanup_eligible_screenshots.py` (new), `backend/app/infrastructure/minio_client.py` (`remove_object`), `backend/app/infrastructure/qdrant_client.py` (`update_vectors`), `backend/app/infrastructure/redis_client.py` (`enqueue_screenshot_enrichment` gains `target_screenshot_id`), `backend/app/workers/arq_worker.py` (2 new tasks + `cron_jobs`), `backend/app/main.py`, `backend/app/config.py` (screenshot constants).
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
@@ -923,7 +943,8 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 | `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053, DEC-054 |
 | `IMPL_25` (Quick Entry API endpoints) | DEC-054 |
 | `IMPL_26`, `IMPL_27` (Quick Entry processing pipeline + chunking) | DEC-053 |
-| `IMPL_28` specifically (vision + storage) | DEC-034 |
+| `IMPL_28` specifically (vision + storage) | DEC-034, DEC-055 |
+| `app/clients/ollama_vision.py` (reused, not duplicated, by Quick Entry) | DEC-038, DEC-040, DEC-055 |
 | `IMPL_29` Section 3.2 (negative-feedback notifications) | not yet built, deferred by DEC-054 to a future "Session 29" |
 | `FRONTEND_36-40` (Quick Entry UI) | DEC-005 |
 | `postgres_client.py`, `vault_client.py` (now dead code) | DEC-046, DEC-051, OPEN-09, OPEN-14 |
