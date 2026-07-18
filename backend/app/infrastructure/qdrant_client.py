@@ -156,6 +156,21 @@ class AegisQdrantClient:
         )
         return True
 
+    async def update_vectors(self, collection_name: str, point_id: str, named_vectors: Dict[str, List[float]]) -> bool:
+        """
+        Partially update one or more named vectors on a point without
+        touching its payload or any other named vector. Used for content
+        re-embedding (e.g. screenshot text enrichment) where the payload
+        is updated separately via set_payload — a plain upsert would
+        silently wipe every payload field not passed in.
+        """
+        from qdrant_client.models import PointVectors
+        await self.client.update_vectors(
+            collection_name=collection_name,
+            points=[PointVectors(id=point_id, vector=named_vectors)],
+        )
+        return True
+
     async def delete_by_document_id(self, collection_name: str, document_id: str) -> bool:
         """Delete all points belonging to a specific document_id (for update flow)."""
         from qdrant_client.models import FilterSelector

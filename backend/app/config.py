@@ -243,4 +243,16 @@ QUICK_ENTRY_DEDUP_THRESHOLD = 0.92                # similarity above = flagged a
 CHUNK_STEPS_PER_BATCH = 5
 CHUNK_BRANCH_MAX_TOKENS = 1500                    # ceiling before forced split within a branch group
 
+# Quick Entry (Session 28 additions — IMPL_23 Section 9 screenshot constants)
+VISION_EXTRACTION_TIMEOUT_SECONDS = 30
+SCREENSHOT_ACCEPTED_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+SCREENSHOT_MAX_PER_CAUSE = 3          # error_guide cause_N sections
+SCREENSHOT_MAX_PER_STEP_BATCH = 2     # procedure proc_steps_N sections — IMPL_25's own count limit
+                                       # text names this tier but IMPL_23 Section 9's constant list
+                                       # never gave it a name; added one rather than leaving it magic
+SCREENSHOT_MAX_OVERALL = 5            # overview/overall sections
+SCREENSHOT_PROXY_CACHE_SECONDS = 86400            # 24 hours
+SCREENSHOT_CLEANUP_MIN_VERSIONS_OLD = 2
+SCREENSHOT_CLEANUP_MIN_ARCHIVED_DAYS = 90
+
 # Note: Full implementation added in Session 02

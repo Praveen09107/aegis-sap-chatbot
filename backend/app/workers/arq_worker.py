@@ -8,7 +8,7 @@ Start command: python -m arq app.workers.arq_worker.WorkerSettings
 import logging
 from typing import Any
 
-from arq import func
+from arq import func, cron
 from arq.connections import RedisSettings
 
 from app.config import REDIS_QUEUE_URL
@@ -21,6 +21,8 @@ from app.tasks.ticket_task import create_mock_ticket
 from app.tasks.cleanup_task import nightly_cleanup
 from app.tasks.process_form_entry import process_form_entry
 from app.tasks.retry_partial_indexing import retry_partial_indexing
+from app.tasks.enrich_entry_screenshots import enrich_entry_screenshots
+from app.tasks.cleanup_eligible_screenshots import cleanup_eligible_screenshots
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,8 @@ class WorkerSettings:
         nightly_cleanup,
         process_form_entry,
         retry_partial_indexing,
+        enrich_entry_screenshots,
+        cleanup_eligible_screenshots,
         # Canonical task-name aliases for ARQ dispatch
         vision_task,
         audit_task,
@@ -105,6 +109,19 @@ class WorkerSettings:
         knowledge_gap_task,
         ticket_task,
         cleanup_task,
+    ]
+
+    # nightly_cleanup existed since the original build but was never actually
+    # scheduled anywhere in this codebase (no APScheduler dependency, no
+    # prior cron_jobs entry — confirmed by grep, it was only ever callable
+    # on-demand via enqueue_job). Fixed here alongside adding the new
+    # screenshot cleanup job, using ARQ's own native cron support rather than
+    # IMPL_28's spec text (which assumes an APScheduler this project doesn't
+    # have installed). Times in UTC: 19:00 = 00:30 IST, 19:30 = 01:00 IST
+    # (IMPL_28 Section 7.2's own stated schedule for screenshot cleanup).
+    cron_jobs = [
+        cron(nightly_cleanup, hour=19, minute=0),
+        cron(cleanup_eligible_screenshots, hour=19, minute=30),
     ]
 
     redis_settings = RedisSettings.from_dsn(REDIS_QUEUE_URL)
