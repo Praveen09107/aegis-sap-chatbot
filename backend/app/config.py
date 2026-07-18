@@ -138,9 +138,57 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL_MAIN = "openai/gpt-oss-120b"       # same weights as CEREBRAS_MODEL_MAIN — note the "openai/" prefix Groq requires that Cerebras does not
 GROQ_MODEL_JUDGE = "llama-3.1-8b-instant"
-GROQ_MODEL_VISION = "meta-llama/llama-4-scout-17b-16e-instruct"  # prefix required — omitting it returns 404
+GROQ_MODEL_JUDGE_CAPABILITY = "openai/gpt-oss-20b"  # judge fallback 1 — capability upgrade for harder judge calls once GROQ_MODEL_JUDGE's much larger daily budget (14,400/day vs 1,000/day) is exhausted
+GROQ_MODEL_VISION = "qwen/qwen3.6-27b"  # dense 27B, MMMU 82.9 — corrected 2026-07-19: this constant previously held
+                                          # "meta-llama/llama-4-scout-17b-16e-instruct", which is no longer present on
+                                          # Groq's live model catalog (confirmed via a real GET /v1/models call during
+                                          # inference-model research) — every real vision call through this constant
+                                          # was silently 404ing. Llama 4 Scout is still genuinely available, just moved
+                                          # to Cloudflare — see CLOUDFLARE_MODEL_VISION below, unaffected by this fix.
+
+# External provider — SambaNova (deep fallback tier for main reasoning + judge)
+# Free-tier limits are per-model, not account-wide: 20 RPM / 20 RPD / 200,000 TPD each.
+SAMBANOVA_API_KEY = os.getenv("SAMBANOVA_API_KEY", "")
+SAMBANOVA_BASE_URL = "https://api.sambanova.ai/v1"
+SAMBANOVA_MODEL_MAIN = "gpt-oss-120b"                        # same weights as CEREBRAS_MODEL_MAIN/GROQ_MODEL_MAIN
+SAMBANOVA_MODEL_JUDGE = "Meta-Llama-3.3-70B-Instruct"
+
+# External provider — Cloudflare Workers AI (deep fallback tier for all 3 roles)
+# Free-tier limit is a single shared 10,000-Neuron/day pool across the whole account,
+# not per-model — all four CLOUDFLARE_MODEL_* constants below draw from the same budget.
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
+CLOUDFLARE_BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run"
+CLOUDFLARE_MODEL_MAIN = "@cf/openai/gpt-oss-120b"            # same weights as CEREBRAS_MODEL_MAIN/GROQ_MODEL_MAIN/SAMBANOVA_MODEL_MAIN
+CLOUDFLARE_MODEL_JUDGE = "@cf/openai/gpt-oss-120b"           # same model reused — judge falls back to the main-reasoning pair here, matching the existing degrade-on-exhaustion pattern
+CLOUDFLARE_MODEL_VISION = "@cf/meta/llama-4-scout-17b-16e-instruct"
+CLOUDFLARE_MODEL_VISION_2 = "@cf/google/gemma-4-26b-a4b-it"  # second, distinct Cloudflare-hosted vision model — a genuine 4th vision tier, not a duplicate
+
+# External provider — Google AI Studio (Gemini 3.5 Flash — vision only, break-glass last tier)
+# Free-tier limit confirmed live: 5 requests/minute. Will fail under normal concurrent
+# traffic — reached only after all 4 prior vision tiers (Groq, Cloudflare x2, Cerebras)
+# have already failed. Not used for main reasoning or judge — request volume disqualifies
+# it from both roles entirely.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_MODEL_VISION = "gemini-3.5-flash"
 
 EXTERNAL_INFERENCE_TIMEOUT_SECONDS = 30   # Cerebras/Groq are fast; GENERATION_TIMEOUT_SECONDS (120) remains for the local/Ollama path
+
+# Inference orchestration — N-tier chain cascade budgets (INFERENCE_ORCHESTRATION_ARCHITECTURE_PLAN.md §3)
+# Total wall-clock ceiling per role across an ENTIRE chain walk, not per-tier —
+# prevents e.g. 4 sequential 30s timeouts stacking into a 2-minute worst case.
+MAIN_CASCADE_BUDGET_SECONDS = 45
+JUDGE_CASCADE_BUDGET_SECONDS = 20
+VISION_CASCADE_BUDGET_SECONDS = 60   # tolerates more — one of its 3 call sites is an async ARQ task, not a live request
+
+# Cloudflare Workers AI — shared account-wide daily Neuron cost pool (not per-model).
+CLOUDFLARE_NEURON_DAILY_CEILING = 10_000
+
+# Per-provider quota ceilings confirmed live during inference-model research (2026-07-18/19) —
+# used by the sliding-window quota tracker for providers with no rate-limit response headers.
+SAMBANOVA_RPD_CEILING = 20            # per model, confirmed via SambaNova's own rate-limits doc
+GEMINI_RPM_CEILING = 5                # confirmed live via a real 429 (quotaValue: "5") during burst testing
 
 # BGE and DeBERTa service URLs
 BGE_SERVICE_URL = os.getenv("BGE_SERVICE_URL", "http://aegis-bge:8002")

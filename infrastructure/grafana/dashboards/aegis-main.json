@@ -126,6 +126,59 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 9,
+      "title": "Inference Quota Remaining (header-based providers)",
+      "type": "bargauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "aegis_inference_quota_remaining",
+          "legendFormat": "{{provider}}/{{model}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Inference Chain Exhausted (by role)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(increase(aegis_inference_chain_exhausted_total[1h])) by (role)",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Inference Tier Usage (which tier actually serves traffic)",
+      "type": "piechart",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(increase(aegis_inference_tier_used_total[1h])) by (role, tier, provider)",
+          "legendFormat": "{{role}} tier {{tier}} ({{provider}})",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }

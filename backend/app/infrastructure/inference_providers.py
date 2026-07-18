@@ -10,7 +10,7 @@ do not reuse Ollama's parsing logic for these providers.
 """
 import json
 import logging
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable, Optional, Tuple
 
 import httpx
 
@@ -25,11 +25,18 @@ async def stream_chat_completion(
     max_tokens: int,
     temperature: float,
     timeout: int,
+    on_headers: Optional[Callable[[httpx.Headers], None]] = None,
 ) -> AsyncIterator[str]:
     """
     Streams tokens from an OpenAI-compatible /chat/completions endpoint.
     Yields token strings as they arrive. Raises on HTTP or connection error —
     caller (model_gateway.py) is responsible for circuit breaker bookkeeping.
+
+    on_headers, if supplied, is called once with the response headers as
+    soon as they're available (before the body starts streaming) — used by
+    model_gateway.py's walk_chain/generate_streaming to cache Groq's/
+    Cerebras's real rate-limit-remaining headers for the quota tracker,
+    without changing this function's return shape for every other caller.
     """
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     request_body = {
@@ -46,6 +53,8 @@ async def stream_chat_completion(
             "POST", f"{base_url}/chat/completions", json=request_body, headers=headers
         ) as response:
             response.raise_for_status()
+            if on_headers:
+                on_headers(response.headers)
             async for line in response.aiter_lines():
                 if not line.strip() or not line.startswith("data: "):
                     continue
@@ -70,8 +79,14 @@ async def call_chat_completion(
     max_tokens: int,
     temperature: float,
     timeout: int,
-) -> str:
-    """Non-streaming call — used for judge/CRAG evaluation. Returns complete response text."""
+) -> Tuple[str, httpx.Headers]:
+    """
+    Non-streaming call — used for judge/CRAG evaluation. Returns
+    (response_text, response_headers) — headers are exposed so callers can
+    parse Groq's/Cerebras's real rate-limit-remaining values for the quota
+    tracker (app/infrastructure/redis_client.py). Callers that don't need
+    the headers can simply discard the second element.
+    """
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     request_body = {
         "model": model,
@@ -84,7 +99,7 @@ async def call_chat_completion(
         resp = await client.post(f"{base_url}/chat/completions", json=request_body, headers=headers)
         resp.raise_for_status()
         result = resp.json()
-        return result["choices"][0]["message"]["content"].strip()
+        return result["choices"][0]["message"]["content"].strip(), resp.headers
 
 
 async def call_vision_completion(
@@ -95,12 +110,14 @@ async def call_vision_completion(
     image_b64: str,
     mime_type: str,
     timeout: int,
-) -> str:
+) -> Tuple[str, httpx.Headers]:
     """
     Non-streaming vision call. Both Groq and Cerebras use the standard
     OpenAI vision content-array format: content is a list mixing a text
     block and an image_url block, NOT Ollama's separate top-level
     "images" array — this is the key translation this function performs.
+    Returns (response_text, response_headers), same reasoning as
+    call_chat_completion above.
     """
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     request_body = {
@@ -119,4 +136,4 @@ async def call_vision_completion(
         resp = await client.post(f"{base_url}/chat/completions", json=request_body, headers=headers)
         resp.raise_for_status()
         result = resp.json()
-        return result["choices"][0]["message"]["content"].strip()
+        return result["choices"][0]["message"]["content"].strip(), resp.headers

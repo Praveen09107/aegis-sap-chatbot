@@ -10,11 +10,28 @@ from app.clients.ollama_vision import (
 )
 
 
+class TestExternalModeRoutesThroughWalkChain:
+    @pytest.mark.asyncio
+    async def test_classify_sap_calls_walk_chain_with_vision_role(self):
+        with patch("app.clients.ollama_vision.INFERENCE_MODE", "external"), \
+             patch("app.services.model_gateway.walk_chain", new=AsyncMock(return_value="transaction_screen")) as mock_walk:
+            await classify_sap("base64data")
+
+        mock_walk.assert_awaited_once()
+        assert mock_walk.call_args.kwargs["role"] == "vision"
+        assert mock_walk.call_args.kwargs["image_b64"] == "base64data"
+
+
 class TestClassifySap:
     @pytest.mark.asyncio
     async def test_classifies_error_dialog(self):
+        # ollama_vision.py's own 2-provider cascade was retired in favor of
+        # model_gateway.walk_chain()'s 5-tier vision chain (Phase 4a) —
+        # classify_sap's own try/except wrapping is unchanged, so this test
+        # now mocks walk_chain directly rather than the old, removed
+        # call_vision_completion import.
         with patch(
-            "app.clients.ollama_vision.call_vision_completion",
+            "app.services.model_gateway.walk_chain",
             new=AsyncMock(return_value="error_dialog"),
         ):
             result = await classify_sap("base64data")
@@ -22,12 +39,20 @@ class TestClassifySap:
         assert result == SAPScreenshotType.ERROR_DIALOG
 
     @pytest.mark.asyncio
-    async def test_classifies_transaction_screen(self):
+    async def test_classifies_transaction_screen_local_mode(self):
+        # Explicitly forces INFERENCE_MODE="local" so this genuinely
+        # exercises the Ollama /api/generate branch it's meant to test —
+        # without this, the real environment's INFERENCE_MODE="external"
+        # would take the walk_chain branch instead, and this test would
+        # only "pass" via classify_sap's own outer exception handler
+        # returning the same default value, not by actually verifying the
+        # Ollama call path (a latent test-quality gap predating this change,
+        # fixed here rather than left in place).
         mock_response = MagicMock()
         mock_response.json.return_value = {"response": "transaction_screen"}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_cls:
+        with patch("app.clients.ollama_vision.INFERENCE_MODE", "local"), patch("httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -37,14 +62,16 @@ class TestClassifySap:
             result = await classify_sap("base64data")
 
         assert result == SAPScreenshotType.TRANSACTION_SCREEN
+        mock_client.post.assert_awaited_once()
+        assert "/api/generate" in mock_client.post.call_args.args[0]
 
     @pytest.mark.asyncio
-    async def test_unknown_response_defaults_to_transaction(self):
+    async def test_unknown_response_defaults_to_transaction_local_mode(self):
         mock_response = MagicMock()
         mock_response.json.return_value = {"response": "some_random_text"}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_cls:
+        with patch("app.clients.ollama_vision.INFERENCE_MODE", "local"), patch("httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -69,7 +96,7 @@ class TestExtractSapContent:
         })
 
         with patch(
-            "app.clients.ollama_vision.call_vision_completion",
+            "app.services.model_gateway.walk_chain",
             new=AsyncMock(return_value=json_response),
         ):
             result = await extract_sap_content("base64data", SAPScreenshotType.ERROR_DIALOG)

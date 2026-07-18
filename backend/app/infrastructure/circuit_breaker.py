@@ -149,6 +149,20 @@ class CircuitBreakerRegistry:
         self._breakers: Dict[str, CircuitBreaker] = {}
         self._initialize()
 
+    # Per-service overrides for the N-tier inference chain (INFERENCE_ORCHESTRATION_
+    # ARCHITECTURE_PLAN.md §4.3). CircuitBreaker.__init__ already accepted these
+    # parameters before this plan — _initialize() simply never passed any until now.
+    # gemini_vision: at a confirmed 5 requests/minute, the global default (10-window/
+    #   50%-threshold, 30s cooldown) would let several more calls through to an
+    #   already-429ing provider before tripping, then reopen inside the same still-
+    #   exhausted 60-second window. Trips faster, stays open longer.
+    # sambanova_main/sambanova_judge: 20 RPM/model — same reasoning, less severe.
+    _OVERRIDES: Dict[str, Dict[str, int]] = {
+        "gemini_vision": {"failure_threshold": 2, "timeout": 90},
+        "sambanova_main": {"failure_threshold": 3, "timeout": 60},
+        "sambanova_judge": {"failure_threshold": 3, "timeout": 60},
+    }
+
     def _initialize(self):
         services = [
             "qdrant",
@@ -166,6 +180,13 @@ class CircuitBreakerRegistry:
         ]
         for service in services:
             self._breakers[service] = CircuitBreaker(service)
+        # Pre-register the two providers with non-default thresholds so they
+        # exist (and carry the override) from process start, rather than being
+        # lazily created with the global default on first .get() — every other
+        # inference-chain circuit (groq_main, cerebras_vision, etc.) still
+        # lazily creates with the default, unaffected by this pre-registration.
+        for service_name, overrides in self._OVERRIDES.items():
+            self._breakers[service_name] = CircuitBreaker(service_name, **overrides)
 
     def get(self, service_name: str) -> CircuitBreaker:
         """Get circuit breaker for a specific service."""

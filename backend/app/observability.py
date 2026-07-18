@@ -81,6 +81,39 @@ VISION_TASKS = Counter(
     ["status"],  # success | failed
 )
 
+# ── Inference orchestration metrics ──────────────────────────
+# Per INFERENCE_ORCHESTRATION_ARCHITECTURE_PLAN.md §4.9. Incremented by
+# app/services/model_gateway.py's walk_chain() and generate_streaming(),
+# and by app/tasks/check_inference_provider_health.py's periodic cron.
+INFERENCE_TIER_USED = Counter(
+    "aegis_inference_tier_used_total",
+    "Which chain tier actually served each successful inference call — the metric that turns "
+    "'is this chain efficient' from an assumption into something observable",
+    ["role", "tier", "provider"],  # role: main|judge|vision
+)
+
+INFERENCE_CHAIN_EXHAUSTED = Counter(
+    "aegis_inference_chain_exhausted_total",
+    "A role's entire N-tier chain was skipped or failed — the real page-worthy "
+    "signal, distinct from per-provider circuit gauges which flap routinely",
+    ["role"],
+)
+
+INFERENCE_CATALOG_DRIFT = Counter(
+    "aegis_inference_catalog_drift_total",
+    "Health-check cron found a previously-registered model missing from a provider's live catalog",
+    ["provider", "model"],
+)
+
+# multiprocess_mode="livesum" required — see ACTIVE_SESSIONS below for why.
+INFERENCE_QUOTA_REMAINING = Gauge(
+    "aegis_inference_quota_remaining",
+    "Last-known remaining quota for a (provider, model) tier — from real "
+    "response headers where available, else the sliding-window tracker's count",
+    ["provider", "model"],
+    multiprocess_mode="livesum",
+)
+
 # ── System metrics ───────────────────────────────────────────
 # uvicorn runs 2 worker processes (UVICORN_WORKERS=2), each with its own
 # prometheus_client registry — multiprocess_mode="livesum" tells the

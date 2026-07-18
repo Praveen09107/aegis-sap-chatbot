@@ -24,6 +24,7 @@ from app.tasks.retry_partial_indexing import retry_partial_indexing
 from app.tasks.enrich_entry_screenshots import enrich_entry_screenshots
 from app.tasks.cleanup_eligible_screenshots import cleanup_eligible_screenshots
 from app.tasks.check_config_staleness import check_config_staleness
+from app.tasks.check_inference_provider_health import check_inference_provider_health
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ class WorkerSettings:
         enrich_entry_screenshots,
         cleanup_eligible_screenshots,
         check_config_staleness,
+        check_inference_provider_health,
         # Canonical task-name aliases for ARQ dispatch
         vision_task,
         audit_task,
@@ -124,11 +126,16 @@ class WorkerSettings:
     # time exists for this pre-existing task, picked to not collide with
     # the two below), 19:00 = 00:30 IST (check_config_staleness — IMPL_29
     # Section 2.2's exact stated schedule), 19:30 = 01:00 IST
-    # (cleanup_eligible_screenshots — IMPL_28 Section 7.2's exact stated schedule).
+    # (cleanup_eligible_screenshots — IMPL_28 Section 7.2's exact stated schedule),
+    # 06:15 = 11:45 IST (check_inference_provider_health — roughly 12h offset
+    # from the cluster above, per INFERENCE_ORCHESTRATION_ARCHITECTURE_PLAN.md
+    # §4.6; no spec-mandated time, deliberately spread out rather than
+    # clustered with the other three).
     cron_jobs = [
         cron(nightly_cleanup, hour=18, minute=45),
         cron(check_config_staleness, hour=19, minute=0),
         cron(cleanup_eligible_screenshots, hour=19, minute=30),
+        cron(check_inference_provider_health, hour=6, minute=15),
     ]
 
     redis_settings = RedisSettings.from_dsn(REDIS_QUEUE_URL)

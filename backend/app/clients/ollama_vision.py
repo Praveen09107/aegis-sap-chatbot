@@ -17,12 +17,8 @@ from typing import List, Dict
 import httpx
 
 from app.config import (
-    INFERENCE_MODE, OLLAMA_VISION_URL, MODEL_VISION,
-    CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL_VISION,
-    GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_VISION, EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
+    INFERENCE_MODE, OLLAMA_VISION_URL, MODEL_VISION, VISION_CASCADE_BUDGET_SECONDS,
 )
-from app.infrastructure.circuit_breaker import circuit_registry
-from app.infrastructure.inference_providers import call_vision_completion
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +103,16 @@ async def _run_vision_prompt(prompt: str, image_base64: str, timeout: int) -> st
     """Shared provider routing for both vision functions in this file.
     image_base64 has no data:image/...;base64, prefix — mime_type is
     assumed image/png for the external providers, since the original
-    Ollama-only design never distinguished JPEG/PNG at this layer."""
+    Ollama-only design never distinguished JPEG/PNG at this layer.
+
+    External mode routes through model_gateway.walk_chain()'s full 5-tier
+    vision chain (INFERENCE_ORCHESTRATION_ARCHITECTURE_PLAN.md §4.5) —
+    this function's own 2-provider try/except cascade was retired in favor
+    of that shared engine. classify_sap()/extract_sap_content() (this
+    file's two callers) keep their own try/except exactly as before,
+    swallowing any exception walk_chain raises and returning a safe
+    default — only this function's internals changed, not the error-
+    handling policy layered on top of it."""
     if INFERENCE_MODE == "local":
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
@@ -118,28 +123,11 @@ async def _run_vision_prompt(prompt: str, image_base64: str, timeout: int) -> st
             response.raise_for_status()
             return response.json().get("response", "")
 
-    cb_groq = circuit_registry.get("groq_vision")
-    cb_cerebras = circuit_registry.get("cerebras_vision")
-    if cb_groq.allows_call:
-        try:
-            result = await call_vision_completion(
-                base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY, model=GROQ_MODEL_VISION,
-                prompt=prompt, image_b64=image_base64, mime_type="image/png",
-                timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
-            )
-            cb_groq.record_success()
-            return result
-        except Exception:
-            cb_groq.record_failure()
-    if cb_cerebras.allows_call:
-        result = await call_vision_completion(
-            base_url=CEREBRAS_BASE_URL, api_key=CEREBRAS_API_KEY, model=CEREBRAS_MODEL_VISION,
-            prompt=prompt, image_b64=image_base64, mime_type="image/png",
-            timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
-        )
-        cb_cerebras.record_success()
-        return result
-    raise RuntimeError("Both groq_vision and cerebras_vision circuits are open")
+    from app.services.model_gateway import walk_chain
+    return await walk_chain(
+        role="vision", prompt=prompt, budget_seconds=VISION_CASCADE_BUDGET_SECONDS,
+        image_b64=image_base64, mime_type="image/png",
+    )
 
 
 async def classify_sap(image_base64: str) -> SAPScreenshotType:

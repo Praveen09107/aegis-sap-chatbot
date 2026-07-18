@@ -1,9 +1,16 @@
 # AEGIS — Inference Provider Model Selection
 ## Final Decision Record: Model Replacements, Justification, Benchmarks, Fallbacks
 
-**Status:** Approved for implementation
+**Status:** SUPERSEDED (2026-07-19) for model selection specifically — kept in place as the historical record of the original 2-provider (Cerebras/Groq) decision, not deleted, per this project's standing practice.
 **Verified against:** Official Cerebras docs (`inference-docs.cerebras.ai`), official Groq docs (`console.groq.com/docs`), direct live fetch on the date of research
-**Supersedes:** All earlier model discussions in this conversation — this is the authoritative, corrected reference
+**Supersedes:** All earlier model discussions in this conversation — this is the authoritative, corrected reference *for the 2-provider design this document describes*.
+
+> **This document describes the ORIGINAL, now-superseded 2-provider selection (Cerebras + Groq only).** The system now routes across a 3-5 tier chain per role, spanning Groq, Cloudflare, Cerebras, SambaNova, and (vision only) Google — see:
+> - **What the current chains actually are:** `INFERENCE_MODEL_RESEARCH_UPDATE_2026-07-18_v3_FINAL.md` — the final, live-verified model selection, including the real judge-primary/fallback reasoning this document never covered (SambaNova, Cloudflare, and Gemini didn't exist as options when this document was written).
+> - **How the system actually routes across them:** `INFERENCE_ORCHESTRATION_ARCHITECTURE_PLAN.md` and `DECISIONS_LOG.md` `DEC-058` — the N-tier `walk_chain()` engine, quota tracking, and health monitoring, all implemented and live-verified.
+> - **Section 3.3 below is also stale in a second, independent way**, unrelated to the multi-provider expansion: `GROQ_MODEL_VISION` was found live to be pointing at a model (`meta-llama/llama-4-scout-17b-16e-instruct`) no longer present on Groq's catalog at all — confirmed and fixed in `DEC-058`. The real current vision primary is `qwen/qwen3.6-27b`.
+>
+> Kept here, unedited below this notice, as the accurate historical record of the reasoning that produced the *original* Cerebras/Groq design — several of its underlying judgments (dual-homing identical weights for zero-drift failover, preferring documented rate limits over marketing claims, checking the exact tab on a multi-tab pricing page) still hold and were directly extended, not reversed, by the later work.
 
 ---
 

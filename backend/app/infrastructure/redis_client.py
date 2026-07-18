@@ -258,6 +258,148 @@ class RedisSessionClient:
         return current_count, is_exceeded
 
     # ============================================================
+    # Inference Quota Tracker
+    # Per INFERENCE_ORCHESTRATION_ARCHITECTURE_PLAN.md §4.4. Three
+    # mechanisms, because the 5 inference providers genuinely don't share
+    # one quota shape — see each method's docstring.
+    #
+    # Every method here FAILS OPEN on a Redis error (returns "quota
+    # available") rather than failing closed, per the plan's Design
+    # Principle 8 — matching the philosophy already established by
+    # check_and_increment_rate_limit above and knowledge_entries_handler.py's
+    # check_qe_rate_limit: Redis being unavailable should not block all
+    # inference, the circuit breaker is the real backstop against a
+    # genuinely unhealthy provider.
+    # ============================================================
+
+    # Lua script for atomic sliding-window check-and-reserve. Evicts expired
+    # entries, checks the count, and reserves a slot in ONE round trip —
+    # unlike check_qe_rate_limit's ZCARD-then-ZADD (not atomic, fine for a
+    # soft in-app limit, not fine here where overshoot means genuinely
+    # exceeding an external provider's documented rate limit under
+    # concurrent load). Returns 1 if reserved, 0 if the window is full.
+    _SLIDING_WINDOW_RESERVE_SCRIPT = """
+        redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[2])
+        local current = redis.call('ZCARD', KEYS[1])
+        if current >= tonumber(ARGV[3]) then
+            return 0
+        end
+        redis.call('ZADD', KEYS[1], ARGV[1], ARGV[5])
+        redis.call('EXPIRE', KEYS[1], ARGV[4])
+        return 1
+    """
+
+    async def reserve_sliding_window_quota(
+        self, provider: str, model: str, window_seconds: int, max_requests: int,
+    ) -> bool:
+        """
+        Atomic check-and-reserve for SambaNova (per-model RPD) and Gemini
+        (per-model RPM) — providers with no rate-limit response headers.
+        Key format: inference_quota:sliding:{provider}:{model}.
+
+        Returns True if a slot was reserved (call should proceed), False if
+        the window is genuinely full (caller should skip this tier). Fails
+        open (returns True) on any Redis error.
+        """
+        key = f"inference_quota:sliding:{provider}:{model}"
+        now = time.time()
+        window_start = now - window_seconds
+        member = f"{now}:{id(object())}"  # cheap uniqueness, no uuid import needed for a Lua ZADD member
+        try:
+            script = self.redis.register_script(self._SLIDING_WINDOW_RESERVE_SCRIPT)
+            result = await script(keys=[key], args=[now, window_start, max_requests, window_seconds, member])
+            return bool(result)
+        except Exception as e:
+            logger.error(f"Sliding-window quota check failed for {provider}/{model} (Redis unavailable, failing open): {e}")
+            return True
+
+    _PROVIDER_HEADER_KEY_PREFIX = "inference_quota:header"
+
+    async def cache_header_quota(
+        self, provider: str, model: str, remaining: int, reset_seconds: int,
+    ) -> None:
+        """
+        Caches Groq's/Cerebras's own authoritative rate-limit-remaining
+        value, parsed from real response headers (x-ratelimit-remaining-*)
+        by the caller — this method just stores what was already parsed.
+        TTL matches the header's own reset window, so a stale cached value
+        expires around the same time the real provider-side window resets.
+        Never raises — a caching failure should not break the call that
+        already succeeded.
+        """
+        key = f"{self._PROVIDER_HEADER_KEY_PREFIX}:{provider}:{model}"
+        try:
+            await self.redis.setex(key, max(reset_seconds, 1), str(remaining))
+        except Exception as e:
+            logger.warning(f"Failed to cache header quota for {provider}/{model}: {e}")
+
+    async def get_cached_header_quota(self, provider: str, model: str) -> Optional[int]:
+        """Returns the last cached remaining-request count, or None if
+        never cached / expired. Used by the admin inference-health endpoint
+        to display a live value, distinct from has_header_quota's boolean
+        gating check below."""
+        key = f"{self._PROVIDER_HEADER_KEY_PREFIX}:{provider}:{model}"
+        try:
+            raw = await self.redis.get(key)
+            return int(raw) if raw is not None else None
+        except Exception as e:
+            logger.warning(f"get_cached_header_quota failed for {provider}/{model}: {e}")
+            return None
+
+    async def has_header_quota(self, provider: str, model: str) -> bool:
+        """
+        Checks the last cached remaining-request count for a header-based
+        provider. No cached value (never called yet, or the TTL expired —
+        meaning the provider's own window has reset) or a Redis error both
+        degrade to "assume available" — a missing/malformed header must
+        never be able to take down a healthy tier, since Groq/Cerebras can
+        change header formats without notice (this codebase has already
+        observed one provider's public model catalog change shape mid-project).
+        """
+        key = f"{self._PROVIDER_HEADER_KEY_PREFIX}:{provider}:{model}"
+        try:
+            raw = await self.redis.get(key)
+            if raw is None:
+                return True
+            return int(raw) > 0
+        except Exception as e:
+            logger.warning(f"Header quota check failed for {provider}/{model} (assuming available): {e}")
+            return True
+
+    _CLOUDFLARE_NEURON_KEY = "inference_quota:cloudflare_neurons"
+
+    async def cloudflare_quota_available(self, daily_ceiling: float) -> bool:
+        """
+        Checks Cloudflare's shared, account-wide daily Neuron cost pool —
+        NOT a per-model request count, a single counter shared across every
+        Cloudflare-hosted tier in every role's chain, matching the platform's
+        real accounting. Fails open on Redis error.
+        """
+        try:
+            raw = await self.redis.get(self._CLOUDFLARE_NEURON_KEY)
+            spent = float(raw) if raw is not None else 0.0
+            return spent < daily_ceiling
+        except Exception as e:
+            logger.warning(f"Cloudflare quota check failed (assuming available): {e}")
+            return True
+
+    async def record_cloudflare_neuron_cost(self, cost: float) -> None:
+        """
+        Increments the shared daily Neuron counter by the real cost from
+        that call's cf-ai-neurons response header. TTL of 26 hours (not a
+        clean 24h) deliberately gives a small buffer past a UTC day
+        boundary rather than a counter that could expire mid-day on a
+        borderline timing race. Never raises.
+        """
+        try:
+            async with self.redis.pipeline(transaction=True) as pipe:
+                pipe.incrbyfloat(self._CLOUDFLARE_NEURON_KEY, cost)
+                pipe.expire(self._CLOUDFLARE_NEURON_KEY, 26 * 3600)
+                await pipe.execute()
+        except Exception as e:
+            logger.warning(f"Failed to record Cloudflare neuron cost: {e}")
+
+    # ============================================================
     # Health Check
     # ============================================================
 
