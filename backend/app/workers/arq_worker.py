@@ -23,6 +23,7 @@ from app.tasks.process_form_entry import process_form_entry
 from app.tasks.retry_partial_indexing import retry_partial_indexing
 from app.tasks.enrich_entry_screenshots import enrich_entry_screenshots
 from app.tasks.cleanup_eligible_screenshots import cleanup_eligible_screenshots
+from app.tasks.check_config_staleness import check_config_staleness
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,7 @@ class WorkerSettings:
         retry_partial_indexing,
         enrich_entry_screenshots,
         cleanup_eligible_screenshots,
+        check_config_staleness,
         # Canonical task-name aliases for ARQ dispatch
         vision_task,
         audit_task,
@@ -115,12 +117,17 @@ class WorkerSettings:
     # scheduled anywhere in this codebase (no APScheduler dependency, no
     # prior cron_jobs entry — confirmed by grep, it was only ever callable
     # on-demand via enqueue_job). Fixed here alongside adding the new
-    # screenshot cleanup job, using ARQ's own native cron support rather than
-    # IMPL_28's spec text (which assumes an APScheduler this project doesn't
-    # have installed). Times in UTC: 19:00 = 00:30 IST, 19:30 = 01:00 IST
-    # (IMPL_28 Section 7.2's own stated schedule for screenshot cleanup).
+    # screenshot cleanup and config-staleness jobs, using ARQ's own native
+    # cron support rather than IMPL_28/29's spec text (which assumes an
+    # APScheduler this project doesn't have installed).
+    # Times in UTC: 18:45 = 00:15 IST (nightly_cleanup — no spec-mandated
+    # time exists for this pre-existing task, picked to not collide with
+    # the two below), 19:00 = 00:30 IST (check_config_staleness — IMPL_29
+    # Section 2.2's exact stated schedule), 19:30 = 01:00 IST
+    # (cleanup_eligible_screenshots — IMPL_28 Section 7.2's exact stated schedule).
     cron_jobs = [
-        cron(nightly_cleanup, hour=19, minute=0),
+        cron(nightly_cleanup, hour=18, minute=45),
+        cron(check_config_staleness, hour=19, minute=0),
         cron(cleanup_eligible_screenshots, hour=19, minute=30),
     ]
 

@@ -33,13 +33,13 @@ async def cleanup_eligible_screenshots(ctx: Dict) -> dict:
     )
     try:
         eligible = await conn.fetch(
-            f"""SELECT kfs.id, kfs.minio_object_key
+            """SELECT kfs.id, kfs.minio_object_key
                 FROM knowledge_form_screenshots kfs
                 JOIN knowledge_form_entries kfe ON kfe.id = kfs.entry_id
                 WHERE kfs.eligible_for_cleanup = FALSE
                   AND (kfe.version - kfs.version) >= $1
                   AND (
-                       (kfe.status = 'archived' AND (NOW() - kfe.updated_at) > ($2 || ' days')::interval)
+                       (kfe.status = 'archived' AND (NOW() - kfe.updated_at) > make_interval(days => $2))
                        OR (kfe.version - kfs.version) >= $3
                   )""",
             SCREENSHOT_CLEANUP_MIN_VERSIONS_OLD, SCREENSHOT_CLEANUP_MIN_ARCHIVED_DAYS, _OLD_VERSION_GAP_ON_ACTIVE,

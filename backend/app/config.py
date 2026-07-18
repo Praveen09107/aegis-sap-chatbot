@@ -255,4 +255,11 @@ SCREENSHOT_PROXY_CACHE_SECONDS = 86400            # 24 hours
 SCREENSHOT_CLEANUP_MIN_VERSIONS_OLD = 2
 SCREENSHOT_CLEANUP_MIN_ARCHIVED_DAYS = 90
 
+# Quick Entry (Session 29 additions — IMPL_29 Section 2 staleness constants)
+REVIEW_FREQUENCY_DAYS = {
+    "monthly": 30, "quarterly": 90, "semi_annual": 180, "annual": 365, "as_needed": None,
+}
+QUICK_ENTRY_STALENESS_SCORE_DEDUCTION = 0.10
+QUICK_ENTRY_QUALITY_FLOOR = 0.40
+
 # Note: Full implementation added in Session 02

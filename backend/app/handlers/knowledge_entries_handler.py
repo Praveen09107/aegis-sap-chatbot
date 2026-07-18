@@ -45,12 +45,12 @@ from math import ceil
 from typing import Optional
 
 import asyncpg
-from fastapi import APIRouter, Request, HTTPException, Depends, Query
+from fastapi import APIRouter, Request, HTTPException, Depends, Query, UploadFile, File
 
 from app.config import (
     POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD,
     QUICK_ENTRY_RATE_LIMIT_MAX, QUICK_ENTRY_RATE_LIMIT_WINDOW_SECONDS,
-    QUICK_ENTRY_PRESUBMIT_DEDUP_THRESHOLD,
+    QUICK_ENTRY_PRESUBMIT_DEDUP_THRESHOLD, REVIEW_FREQUENCY_DAYS,
 )
 from app.services.form_validator import validate_form_data
 
@@ -61,6 +61,12 @@ IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
 
 CONTENT_TYPES = {"error_guide", "procedure", "config"}
 MODULES = {"FI", "MM", "SD", "HR", "PP", "CO", "BASIS"}
+
+
+def compute_next_review_date(verified_date: date, review_frequency: Optional[str]) -> Optional[date]:
+    """Per IMPL_29 Section 2.1. Returns None for 'as_needed' — no automatic review date."""
+    days = REVIEW_FREQUENCY_DAYS.get(review_frequency) if review_frequency else None
+    return verified_date + timedelta(days=days) if days is not None else None
 REVIEW_FREQUENCIES = {"monthly", "quarterly", "semi_annual", "annual", "as_needed"}
 
 
@@ -196,17 +202,18 @@ async def create_entry(
 
         submitted_by = getattr(request.state, "user_id", None) or "unknown"
         status = "processing" if publish else "draft"
+        next_review_date = compute_next_review_date(verified_date, review_frequency) if content_type == "config" else None
 
         try:
             row = await conn.fetchrow(
                 """INSERT INTO knowledge_form_entries
                    (document_id, content_type, module, transactions, status, form_data,
-                    verified_by_name, verified_date, review_frequency, gap_id, submitted_by)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid, $11::uuid)
+                    verified_by_name, verified_date, review_frequency, next_review_date, gap_id, submitted_by)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::uuid, $12::uuid)
                    RETURNING id, version""",
                 document_id, content_type, module, transactions, status,
                 _dumps(form_data), verified_by_name, verified_date, review_frequency,
-                gap_id, submitted_by,
+                next_review_date, gap_id, submitted_by,
             )
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=409, detail=f"Document ID {document_id} already exists.")
@@ -484,6 +491,102 @@ async def validate_reference(doc_id: str = Query(...), _admin: str = Depends(req
 
 
 # ============================================================
+# ENDPOINT 14: PIPELINE HEALTH  (registered before /{id})
+# ============================================================
+
+@router.get("/pipeline-health")
+async def get_pipeline_health(_admin: str = Depends(require_it_admin)):
+    # ARQ stores queue state in Redis, not a queryable-by-function-name SQL
+    # table (IMPL_25's spec SQL assumes a nonexistent "arq_jobs" Postgres
+    # table — no such table exists; ARQ jobs share one Redis queue with no
+    # per-function breakdown without inspecting every queued job). Uses a
+    # DB-derived proxy instead: entries actively in 'processing' status, and
+    # screenshots in 'pending'/'processing' vision_status — arguably more
+    # useful for this specific admin view anyway, since it's scoped to
+    # Quick Entry rather than the whole shared ARQ queue.
+    conn = await _db()
+    try:
+        form_entry_queue = await conn.fetchval("SELECT COUNT(*) FROM knowledge_form_entries WHERE status = 'processing'")
+        screenshot_queue = await conn.fetchval("SELECT COUNT(*) FROM knowledge_form_screenshots WHERE vision_status IN ('pending', 'processing')")
+        avg_processing_ms = await conn.fetchval(
+            """SELECT AVG((processing_log->>'total_duration_ms')::float) FROM knowledge_form_entries
+               WHERE updated_at >= NOW() - INTERVAL '24 hours' AND processing_log IS NOT NULL"""
+        )
+        status_rows = await conn.fetch("SELECT status, COUNT(*) as count FROM knowledge_form_entries GROUP BY status")
+        screenshot_rows = await conn.fetch("SELECT vision_status, COUNT(*) as count FROM knowledge_form_screenshots GROUP BY vision_status")
+        qe_avg_quality = await conn.fetchval(
+            """SELECT AVG((processing_log->'stages'->'quality_scoring'->>'avg_score')::float)
+               FROM knowledge_form_entries WHERE status = 'active' AND processing_log IS NOT NULL"""
+        )
+        feedback_negative_entries = await conn.fetchval(
+            """SELECT COUNT(DISTINCT source_form_entry_id) FROM (
+                 SELECT source_form_entry_id,
+                        SUM(CASE WHEN feedback_signal='positive' THEN 1 ELSE 0 END) as pos,
+                        SUM(CASE WHEN feedback_signal='negative' THEN 1 ELSE 0 END) as neg
+                 FROM feedback_events
+                 WHERE source_form_entry_id IS NOT NULL AND created_at >= NOW() - INTERVAL '30 days'
+                 GROUP BY source_form_entry_id
+                 HAVING SUM(CASE WHEN feedback_signal='negative' THEN 1 ELSE 0 END) >
+                        SUM(CASE WHEN feedback_signal='positive' THEN 1 ELSE 0 END)
+               ) sub"""
+        )
+        storage_bytes = await conn.fetchval("SELECT COALESCE(SUM(file_size_bytes), 0) FROM knowledge_form_screenshots")
+        eligible_cleanup = await conn.fetchval("SELECT COUNT(*) FROM knowledge_form_screenshots WHERE eligible_for_cleanup = TRUE")
+
+        status_counts = {r["status"]: r["count"] for r in status_rows}
+        screenshot_counts = {r["vision_status"]: r["count"] for r in screenshot_rows}
+        failed_entries = status_counts.get("failed", 0)
+        partial_index = status_counts.get("partial_index", 0)
+        failed_screenshots = screenshot_counts.get("failed", 0)
+
+        if failed_entries > 5 or partial_index > 5:
+            badge = "red"
+        elif failed_entries > 0 or failed_screenshots > 0:
+            badge = "amber"
+        else:
+            badge = "green"
+
+        return {
+            "badge": badge,
+            "arq_queues": {
+                "form_entry_queue_pending": form_entry_queue,
+                "screenshot_queue_pending": screenshot_queue,
+                "avg_processing_seconds": round(avg_processing_ms / 1000, 2) if avg_processing_ms is not None else None,
+            },
+            "entry_status": {
+                "active": status_counts.get("active", 0), "draft": status_counts.get("draft", 0),
+                "processing": status_counts.get("processing", 0), "failed": failed_entries,
+                "partial_index": partial_index, "review_required": status_counts.get("review_required", 0),
+            },
+            "screenshot_status": {
+                "complete": screenshot_counts.get("complete", 0), "processing": screenshot_counts.get("processing", 0),
+                "pending": screenshot_counts.get("pending", 0), "failed": failed_screenshots,
+                "not_sap": screenshot_counts.get("not_sap", 0),
+            },
+            "knowledge_quality": {"quick_entry_avg_score": round(qe_avg_quality, 4) if qe_avg_quality is not None else None},
+            "feedback": {"entries_with_net_negative_feedback_30d": feedback_negative_entries},
+            "storage": {"screenshot_storage_bytes": storage_bytes, "eligible_for_cleanup": eligible_cleanup},
+        }
+    finally:
+        await conn.close()
+
+
+# ============================================================
+# BULK IMPORT: PRE-FILL FROM EXISTING DOCUMENT  (registered before /{id})
+# ============================================================
+
+@router.post("/import-document")
+async def import_document(file: UploadFile = File(...), _admin: str = Depends(require_it_admin)):
+    from app.services.form_import_parser import parse_document_for_form_prefill
+
+    if not (file.filename or "").lower().endswith((".docx", ".pdf")):
+        raise HTTPException(status_code=422, detail=[{"field": "file", "message": "file must be .docx or .pdf."}])
+
+    file_bytes = await file.read()
+    return await parse_document_for_form_prefill(file_bytes, file.filename)
+
+
+# ============================================================
 # ENDPOINT 3: GET SINGLE ENTRY
 # ============================================================
 
@@ -572,29 +675,90 @@ async def update_entry(id: str, request: Request, _admin: str = Depends(require_
             # uq_kfev_entry_version (confirmed live: UniqueViolationError on
             # the very first publish-update of any entry, since create_entry()
             # already wrote version 1's row).
-            await conn.execute(
-                """INSERT INTO knowledge_form_entry_versions
-                   (entry_id, version, form_data, verified_by_name, verified_date, changed_by, change_summary)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7)""",
-                id, new_version, _dumps(form_data),
-                verified_by_name, verified_date, changed_by, body.get("change_summary"),
-            )
+            try:
+                await conn.execute(
+                    """INSERT INTO knowledge_form_entry_versions
+                       (entry_id, version, form_data, verified_by_name, verified_date, changed_by, change_summary)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+                    id, new_version, _dumps(form_data),
+                    verified_by_name, verified_date, changed_by, body.get("change_summary"),
+                )
+            except asyncpg.UniqueViolationError:
+                # The optimistic-lock check above has a genuine TOCTOU window:
+                # two concurrent publish-updates can both read the same
+                # existing["version"] before either commits. Confirmed live
+                # (Session 29 Hardening Check #2) — this constraint is what
+                # actually prevents the second write from silently
+                # overwriting the first (no data loss occurs), but it must
+                # surface as the same 409 contract as the pre-check, not an
+                # unhandled 500.
+                current_entry = await conn.fetchrow("SELECT * FROM knowledge_form_entries WHERE id = $1::uuid", id)
+                raise HTTPException(status_code=409, detail={
+                    "message": f"Entry was modified by another admin since you opened it. Current version is {current_entry['version']}.",
+                    "current_entry": _serialize_entry_row(current_entry),
+                })
         else:
             new_version = existing["version"]
             new_status = "draft"
+            # current_version alone cannot detect concurrent draft edits —
+            # drafts never increment version (IMPL_25's own "drafts do not
+            # create version history"), so two concurrent draft saves would
+            # both pass the version check and silently last-write-wins.
+            # Confirmed live (Session 29 Hardening Check #2). updated_at
+            # changes on every save (kfe_updated_at_trigger), so it's used
+            # as the lock field for drafts instead — required, not optional,
+            # since no real client depends on the old draft-save contract yet.
+            expected_updated_at_str = body.get("expected_updated_at")
+            if not expected_updated_at_str:
+                raise HTTPException(status_code=422, detail=[{"field": "expected_updated_at", "message": "expected_updated_at is required for draft saves (optimistic lock — version does not change for drafts)."}])
+            try:
+                expected_updated_at = datetime.fromisoformat(expected_updated_at_str)
+            except ValueError:
+                raise HTTPException(status_code=422, detail=[{"field": "expected_updated_at", "message": "expected_updated_at must be a valid ISO timestamp."}])
 
-        await conn.execute(
-            """UPDATE knowledge_form_entries SET
-               document_id = $1, module = $2, transactions = $3, form_data = $4,
-               verified_by_name = $5, verified_date = $6, review_frequency = $7,
-               version = $8, status = $9
-               WHERE id = $10::uuid""",
-            body.get("document_id", existing["document_id"]), body.get("module", existing["module"]),
-            body.get("transactions", existing["transactions"]), _dumps(form_data),
-            body.get("verified_by_name", existing["verified_by_name"]), verified_date,
-            body.get("review_frequency", existing["review_frequency"]),
-            new_version, new_status, id,
+        new_review_frequency = body.get("review_frequency", existing["review_frequency"])
+        new_next_review_date = (
+            compute_next_review_date(verified_date, new_review_frequency)
+            if content_type == "config" else existing["next_review_date"]
         )
+
+        if publish:
+            await conn.execute(
+                """UPDATE knowledge_form_entries SET
+                   document_id = $1, module = $2, transactions = $3, form_data = $4,
+                   verified_by_name = $5, verified_date = $6, review_frequency = $7,
+                   next_review_date = $8, version = $9, status = $10
+                   WHERE id = $11::uuid""",
+                body.get("document_id", existing["document_id"]), body.get("module", existing["module"]),
+                body.get("transactions", existing["transactions"]), _dumps(form_data),
+                body.get("verified_by_name", existing["verified_by_name"]), verified_date,
+                new_review_frequency, new_next_review_date,
+                new_version, new_status, id,
+            )
+        else:
+            # Atomic check-and-update: the WHERE clause itself enforces the
+            # lock, closing the TOCTOU window between the SELECT above and
+            # this UPDATE (the same race the publish path closes via
+            # uq_kfev_entry_version — drafts have no such unique constraint
+            # to lean on, so the row-affected check does the same job).
+            result = await conn.execute(
+                """UPDATE knowledge_form_entries SET
+                   document_id = $1, module = $2, transactions = $3, form_data = $4,
+                   verified_by_name = $5, verified_date = $6, review_frequency = $7,
+                   next_review_date = $8, version = $9, status = $10
+                   WHERE id = $11::uuid AND updated_at = $12""",
+                body.get("document_id", existing["document_id"]), body.get("module", existing["module"]),
+                body.get("transactions", existing["transactions"]), _dumps(form_data),
+                body.get("verified_by_name", existing["verified_by_name"]), verified_date,
+                new_review_frequency, new_next_review_date,
+                new_version, new_status, id, expected_updated_at,
+            )
+            if result == "UPDATE 0":
+                current_entry = await conn.fetchrow("SELECT * FROM knowledge_form_entries WHERE id = $1::uuid", id)
+                raise HTTPException(status_code=409, detail={
+                    "message": "Draft was modified by another admin since you opened it.",
+                    "current_entry": _serialize_entry_row(current_entry),
+                })
 
         if publish:
             from app.infrastructure.redis_client import arq_client
@@ -791,3 +955,64 @@ async def get_feedback_summary(id: str, _admin: str = Depends(require_it_admin))
         }
     finally:
         await conn.close()
+
+
+# ============================================================
+# ENDPOINT 13: CONFIRM CONFIG CURRENT
+# ============================================================
+
+@router.post("/{id}/confirm-current")
+async def confirm_current(id: str, _admin: str = Depends(require_it_admin)):
+    from app.infrastructure.qdrant_client import qdrant_client, CONTENT_TYPE_TO_COLLECTION
+    from app.infrastructure.opensearch_client import opensearch_client
+
+    conn = await _db()
+    try:
+        entry = await conn.fetchrow("SELECT * FROM knowledge_form_entries WHERE id = $1::uuid", id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+        if entry["content_type"] != "config":
+            raise HTTPException(status_code=422, detail="confirm-current only applies to config entries.")
+        if entry["status"] != "review_required":
+            raise HTTPException(status_code=409, detail=f"Entry status is '{entry['status']}', not 'review_required'.")
+
+        today = datetime.now(IST_OFFSET).date()
+        new_next_review = compute_next_review_date(today, entry["review_frequency"])
+        collection = CONTENT_TYPE_TO_COLLECTION["config"]
+
+        chunks = await conn.fetch(
+            "SELECT qdrant_point_id, original_quality_score FROM knowledge_form_entry_chunks WHERE entry_id = $1::uuid AND is_current = TRUE",
+            id,
+        )
+        for chunk_row in chunks:
+            point_id = str(chunk_row["qdrant_point_id"])
+            restore_score = chunk_row["original_quality_score"]
+            try:
+                await qdrant_client.set_payload(collection, point_id, {"is_stale": False, "quality_score": restore_score})
+            except Exception as e:
+                logger.warning(f"Qdrant staleness restore failed for {point_id}: {e}")
+            try:
+                await opensearch_client.update_document(point_id, {"is_stale": False, "quality_score": restore_score})
+            except Exception as e:
+                logger.warning(f"OpenSearch staleness restore failed for {point_id}: {e}")
+            await conn.execute(
+                "UPDATE knowledge_form_entry_chunks SET quality_score = $1 WHERE qdrant_point_id = $2",
+                restore_score, chunk_row["qdrant_point_id"],
+            )
+
+        await conn.execute(
+            """UPDATE knowledge_form_entries SET
+               status = 'active', verified_date = $1, next_review_date = $2, updated_at = NOW()
+               WHERE id = $3::uuid""",
+            today, new_next_review, id,
+        )
+
+        return {
+            "verified_date": today.isoformat(),
+            "next_review_date": new_next_review.isoformat() if new_next_review else None,
+            "status": "active",
+            "message": f"Configuration values confirmed current. Next review: {new_next_review.isoformat() if new_next_review else 'not scheduled (as-needed)'}.",
+        }
+    finally:
+        await conn.close()
+
