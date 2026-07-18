@@ -891,6 +891,37 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 
 ---
 
+### DEC-056 — Session 29 Built: Operational Systems (Phase 3 + Phase 1.9); Two Real Concurrent-Edit Bugs Found and Fixed via the Explicit Hardening Checks
+
+**Status:** CONFIRMED
+
+**Decision:** The kickoff assumed Phase 1.9 (staleness job) was already built in an earlier session. Checked directly before proceeding, per this project's now-standard discipline: false — no `check_config_staleness`, no `REVIEW_FREQUENCY_DAYS`-based flagging existed anywhere (only unrelated staleness concepts: query-time freshness warnings in `reasoning_service.py`, document-registry age labels in `admin_handler.py`, and an unrelated `config_snapshot` staleness threshold). This also directly blocked the session's own Hardening Check #4. Presented directly rather than silently rebuilding or silently skipping; chose to build it now. Built `check_config_staleness` (real quality-score reduction with floor, `original_quality_score` preservation, exact spec semantics), `POST /{id}/confirm-current`, and — a further real gap found underneath this one — wired `compute_next_review_date()` into `create_entry()`/`update_entry()` for the first time: `next_review_date` had a column since migration 007 but nothing had ever written to it, meaning every config entry created before this session has (and will keep) a permanently null review date. Phase 1.10 (feedback) confirmed genuinely complete already (`DEC-054`) — not rebuilt.
+
+**Phase 3.2 (bulk import), a real design correction found before building:** `IMPL_29`'s spec assumes a standalone `app/services/text_extractor.py` module; no such module exists — Stage 2 text extraction is a private method on `ingestion_pipeline.py`'s `IngestionPipeline` class. Rather than reach into another class's private methods, wrote independent byte-based extraction. The procedure parser also required real judgment: the frozen `AEGIS_DOCUMENT_TEMPLATES.md` uses individual `STEP_N:` labels within `PHASE_NAME` sections (not free-flowing phase prose, which is what an under-specified reading of the spec might have produced) — each `STEP_N` maps to one Quick Entry `steps[]` entry, defaulting to `step_type='normal'` since the source document format has no way to express branch/admin-required steps at all.
+
+**Phase 3.3 (pipeline health), a real gap found before building:** `IMPL_25`'s spec SQL queries a table named `arq_jobs` for per-function queue depths — no such table exists; ARQ stores all queue state in Redis with no per-function breakdown without inspecting every queued job's serialized data. Used a DB-derived proxy instead (`knowledge_form_entries.status='processing'` count, `knowledge_form_screenshots.vision_status IN ('pending','processing')` count) — arguably more useful for a view scoped specifically to Quick Entry anyway, since the real ARQ queue is shared across every task type in the application, not just Quick Entry's two.
+
+**Phase 3.4 (Knowledge Gaps write-back), two real findings:** (1) the backend write-back itself (`process_form_entry` Stage A13) already existed from `DEC-053`/Session 26 — added the idempotency guard (`AND addressed_by_entry_id IS NULL`) `IMPL_29` Section 4.1 specifies, which the original implementation was missing. (2) The `GET` gaps endpoint `IMPL_29` Section 4.2 assumes adding fields to is a per-gap-event list; the real, pre-existing endpoint is clustered by `gap_description`, aggregating potentially many individual events with no single natural id. Resolved by exposing a representative `gap_id` (most recent event in the cluster) and an aggregate addressed-status (any event in the cluster addressed, with that event's details) — a genuine, disclosed design choice for a page that doesn't have a real frontend yet to validate the exact contract against.
+
+**Two real, distinct concurrent-edit bugs found by actually running Hardening Check #2, not by code review:**
+1. **Concurrent draft edits had zero conflict protection.** Two simultaneous `PUT` requests with `publish=false` and the same `current_version` both returned `200` — one admin's edit silently overwrote the other's, with neither ever informed. Root cause: drafts never increment `version` (`IMPL_25`'s own "drafts do not create version history"), so the version-based optimistic lock structurally cannot see draft-to-draft changes — this was true for every draft save since Session 25, not something this session's changes introduced. Fixed with a second lock mechanism specific to the draft path: `expected_updated_at`, now required in the request body, enforced atomically via the `UPDATE`'s own `WHERE id = $X AND updated_at = $Y` clause (closing the same TOCTOU window a naive pre-check-then-write would still have) rather than a lower-precision naive comparison.
+2. **Concurrent publish-updates raised an unhandled `500`, not the intended `409`.** The database's `uq_kfev_entry_version` unique constraint genuinely prevented data corruption (confirmed: the losing request's changes were never applied), but the raw `asyncpg.exceptions.UniqueViolationError` propagated uncaught. Fixed by catching it and returning the identical `409` contract the pre-check already uses.
+
+**A third, unrelated real bug found while re-testing Hardening Check #5:** `cleanup_eligible_screenshots`' eligibility query (`(NOW() - kfe.updated_at) > ($2 || ' days')::interval`) failed with `asyncpg.exceptions.DataError` — `$2` binds as a Python `int`, and Postgres's `||` text-concatenation operator has no implicit int→text cast. Fixed with `make_interval(days => $2)`, which accepts the integer directly.
+
+**All 5 hardening checks run for real, results reported directly, not assumed:**
+1. Rate limiting — 6th submission within the 15-minute window returned a real `429` with the correct `Retry-After` header and IST-formatted message.
+2. Concurrent edit — both the draft and publish races now correctly produce exactly one `200` and one `409` (previously: draft path `200`/`200` with confirmed silent data loss; publish path `200`/`500`).
+3. Partial index recovery — `retry_partial_indexing` (`DEC-053`) re-confirmed live: `qdrant_fixed=1, os_fixed=1, still_failing=[]`.
+4. Staleness job — a real config entry's chunk `quality_score` was reduced by exactly `QUICK_ENTRY_STALENESS_SCORE_DEDUCTION` (floored at `QUICK_ENTRY_QUALITY_FLOOR`, `original_quality_score` untouched) and status flipped to `review_required`; `confirm-current` then restored the exact original scores and recomputed `next_review_date`.
+5. Screenshot lifecycle — tested all three real eligibility branches directly (archived + version-gap ≥2 + >90 days → eligible; version-gap too small → correctly **not** eligible regardless of age/status; active entry with version-gap ≥5 → eligible via the second branch), confirmed at both the DB (`eligible_for_cleanup`) and MinIO (object actually removed / actually retained) level — not just "the job exists and runs."
+
+**A disclosed mistake during Check #5's test cleanup, not part of the actual session deliverable:** an ad hoc verification script called `minio_client.delete_prefix(bucket, "")` with an empty prefix, which deletes every object in the bucket rather than a scoped subset. Checked immediately: the `knowledge-screenshots` bucket contained only this session's and `DEC-055`'s own test artifacts (real screenshot uploads have never succeeded in this environment — blocked by `OPEN-13`'s placeholder inference keys the same way every other vision call is), so no real data was lost; `aegis-documents` was confirmed untouched. Disclosed regardless, since the same call against a bucket with real content would have been a genuine incident.
+
+**Affects:** `backend/app/services/form_import_parser.py` (new), `backend/app/tasks/check_config_staleness.py` (new), `backend/app/handlers/knowledge_entries_handler.py` (`compute_next_review_date`, `confirm-current`, `pipeline-health`, `import-document`, both concurrent-edit fixes, route reordering), `backend/app/handlers/admin_handler.py` (`get_knowledge_gaps` extension), `backend/app/tasks/process_form_entry.py` (idempotency guard), `backend/app/tasks/cleanup_eligible_screenshots.py` (`make_interval` fix), `backend/app/workers/arq_worker.py` (new task + `cron_jobs` entry), `backend/app/config.py` (staleness constants).
+
+---
+
 # PART G — OPEN ITEMS REGISTER
 ## Items explicitly identified as unresolved; must be closed before the affected work can be considered complete
 
@@ -940,12 +971,13 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 | `IMPL_17` | DEC-015 — direct, load-bearing dependency via `call_judge()`, already correctly delegated (not a retrofit target, unlike `vision_task.py`/`retrieval_engine.py`) |
 | `IMPL_18` | DEC-004, DEC-024, DEC-036 |
 | `IMPL_21`, `IMPL_22` | DEC-025 (historical patch resolution) |
-| `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053, DEC-054 |
-| `IMPL_25` (Quick Entry API endpoints) | DEC-054 |
+| `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053, DEC-054, DEC-056 |
+| `IMPL_25` (Quick Entry API endpoints) | DEC-054, DEC-056 (confirm-current, pipeline-health, import-document) |
 | `IMPL_26`, `IMPL_27` (Quick Entry processing pipeline + chunking) | DEC-053 |
 | `IMPL_28` specifically (vision + storage) | DEC-034, DEC-055 |
 | `app/clients/ollama_vision.py` (reused, not duplicated, by Quick Entry) | DEC-038, DEC-040, DEC-055 |
-| `IMPL_29` Section 3.2 (negative-feedback notifications) | not yet built, deferred by DEC-054 to a future "Session 29" |
+| `IMPL_29` (operational systems: staleness, gaps write-back, rate limiting, bulk import, pipeline health) | DEC-056 |
+| `IMPL_29` Section 3.2 (negative-feedback notifications, `admin_notifications` table) | still not built — genuinely out of scope for every session so far, no future session currently assigned |
 | `FRONTEND_36-40` (Quick Entry UI) | DEC-005 |
 | `postgres_client.py`, `vault_client.py` (now dead code) | DEC-046, DEC-051, OPEN-09, OPEN-14 |
 | `docker-compose.yml` | DEC-014, DEC-024, DEC-051, DEC-052 |
