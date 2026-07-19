@@ -1,0 +1,110 @@
+import { describe, it, expect, beforeEach } from "vitest"
+import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { SessionSidebar } from "./SessionSidebar"
+import { useSessionStore } from "@/stores/sessionStore"
+import { useChatStore } from "@/stores/chatStore"
+import type { Session } from "@/types"
+
+function makeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    id: overrides.id ?? "s1",
+    user_id_hash: "h1",
+    topic_summary: "VL150 delivery error",
+    created_at: "2026-07-18T00:00:00Z",
+    updated_at: "2026-07-19T00:00:00Z",
+    turn_count: 3,
+    avg_confidence_score: 0.9,
+    confidence_badge: "green",
+    module_tags: ["SD"],
+    is_pinned: false,
+    is_unresolved: false,
+    ...overrides,
+  }
+}
+
+describe("SessionSidebar", () => {
+  beforeEach(() => {
+    useSessionStore.setState({
+      activeSessionId: null,
+      searchQuery: "",
+      pinnedIds: new Set<string>(),
+    })
+    useChatStore.setState({ websocket: null, messages: [], streamingState: "idle" })
+  })
+
+  it("shows the empty state when there are no sessions", () => {
+    render(<SessionSidebar sessions={[]} />)
+    expect(screen.getByText("No sessions yet")).toBeInTheDocument()
+  })
+
+  it("shows the loading skeleton when isLoading is true", () => {
+    render(<SessionSidebar sessions={[]} isLoading />)
+    expect(screen.queryByText("No sessions yet")).not.toBeInTheDocument()
+  })
+
+  it("renders sessions grouped by date", () => {
+    render(
+      <SessionSidebar
+        sessions={[makeSession({ id: "s1", topic_summary: "First topic" })]}
+      />
+    )
+    expect(screen.getByText("First topic")).toBeInTheDocument()
+  })
+
+  it("filters sessions by the debounced search query", async () => {
+    render(
+      <SessionSidebar
+        sessions={[
+          makeSession({ id: "s1", topic_summary: "VL150 delivery error" }),
+          makeSession({ id: "s2", topic_summary: "MIGO goods receipt" }),
+        ]}
+      />
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText("Search sessions"), "MIGO")
+
+    await waitFor(() => {
+      expect(screen.getByText("MIGO goods receipt")).toBeInTheDocument()
+      expect(screen.queryByText("VL150 delivery error")).not.toBeInTheDocument()
+    })
+  })
+
+  it("shows a search-specific empty message when a query matches nothing", async () => {
+    render(<SessionSidebar sessions={[makeSession()]} />)
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText("Search sessions"), "nonexistent")
+
+    await waitFor(() => {
+      expect(screen.getByText("No sessions match your search")).toBeInTheDocument()
+    })
+  })
+
+  it("new session button resets chat and clears the active session", async () => {
+    useSessionStore.setState({ activeSessionId: "s1" })
+    render(<SessionSidebar sessions={[makeSession()]} />)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByLabelText("New chat session"))
+
+    expect(useSessionStore.getState().activeSessionId).toBeNull()
+  })
+
+  it("sorts pinned sessions first regardless of date", () => {
+    useSessionStore.setState({ pinnedIds: new Set(["s2"]) })
+    render(
+      <SessionSidebar
+        sessions={[
+          makeSession({ id: "s1", topic_summary: "Newer, unpinned", updated_at: "2026-07-19T12:00:00Z" }),
+          makeSession({ id: "s2", topic_summary: "Older, pinned", updated_at: "2026-07-18T00:00:00Z" }),
+        ]}
+      />
+    )
+
+    const items = screen.getAllByRole("listitem")
+    expect(items[0]).toHaveTextContent("Older, pinned")
+    expect(items[1]).toHaveTextContent("Newer, unpinned")
+  })
+})

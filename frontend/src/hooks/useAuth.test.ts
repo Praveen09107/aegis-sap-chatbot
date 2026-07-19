@@ -96,4 +96,15 @@ describe("useAuth", () => {
 
     expect(refreshAccessTokenMock).not.toHaveBeenCalled()
   })
+
+  it("resolves initializing to false once the cookie read completes, even when authenticated", () => {
+    getAuthStateMock.mockReturnValue({ isAuthenticated: true, role: "employee" })
+    const { result } = renderHook(() => useAuth())
+
+    // renderHook flushes effects synchronously, so by the time result.current
+    // is read, the real cookie state has already replaced the SSR-safe
+    // unauthenticated default.
+    expect(result.current.initializing).toBe(false)
+    expect(result.current.isAuthenticated).toBe(true)
+  })
 })
