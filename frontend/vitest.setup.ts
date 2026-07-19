@@ -16,3 +16,22 @@ globalThis.ResizeObserver = ResizeObserverStub
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
+
+// jsdom doesn't implement matchMedia — useMediaQuery (usePrefersReducedMotion,
+// useIsOptimalWidth) is now used by real components as of F06. Defaults to
+// "no match" (e.g. no reduced-motion preference), matching a typical
+// browser default; individual tests that need a specific match state
+// still stub window.matchMedia locally, as several already do.
+if (!window.matchMedia) {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList
+}
