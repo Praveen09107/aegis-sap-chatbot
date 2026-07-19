@@ -164,7 +164,7 @@ its role, not its content.
 ### Verify — the full standards gate, app-wide, for the first time
 ```bash
 npx tsc --noEmit              # 0 errors, whole tree
-npx next lint                 # 0 errors, 0 warnings
+npx eslint .                  # 0 errors, 0 warnings (`next lint` no longer exists in Next.js 16 — confirmed live via `next --help`, no `lint` subcommand at all; `package.json`'s own `lint` script runs `eslint .` directly)
 npx vitest run --coverage     # thresholds met, whole tree
 npx playwright test           # full suite: functional + visual + accessibility + security, both browsers
 npm run build                 # builds successfully

@@ -1,6 +1,6 @@
 ---
 description: Run the actual verification suite for the current AEGIS session and report pass/fail honestly
-allowed-tools: Bash(find:*), Bash(python -m py_compile:*), Bash(pytest:*), Bash(docker compose:*), Bash(npx tsc:*), Bash(npx vitest:*), Bash(npx playwright:*), Bash(npx next lint:*)
+allowed-tools: Bash(find:*), Bash(python -m py_compile:*), Bash(pytest:*), Bash(docker compose:*), Bash(npx tsc:*), Bash(npx vitest:*), Bash(npx playwright:*), Bash(npx eslint:*)
 ---
 
 ## Which stack this session touched — run the matching block below, not both blindly
@@ -39,7 +39,7 @@ Notes: [any environment-specific adjustment made this session]
 
 !`cd frontend && npx playwright test 2>&1 | tail -40`
 
-!`cd frontend && npx next lint 2>&1 || echo "lint: see errors above"`
+!`cd frontend && npx eslint . 2>&1 || echo "lint: see errors above"`
 
 Frontend commit message format — the guide's own short one-liner (`FRONTEND_SESSION_GUIDE_PART1/2/3_*.md`'s "Commit" block for the exact wording per session), **not** the backend's multi-section template — e.g. `git commit -m "F01: Project scaffold — Next.js 16, React 19, shadcn/ui, test tooling"`. Do not force the `Session N: IMPL_XX` format onto a frontend session.
 

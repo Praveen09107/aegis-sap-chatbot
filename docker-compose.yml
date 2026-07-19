@@ -636,7 +636,13 @@ services:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      # Host port moved off Grafana's own default (3000) — confirmed live,
+      # 2026-07-19: every part of the frontend spec (Playwright's baseURL,
+      # NEXTAUTH_URL, `npm run dev`'s own default) assumes Next.js owns
+      # :3000 on the host, and nothing external depends on Grafana
+      # specifically being reachable at :3000 (container-internal port
+      # stays 3000, only the host-side mapping changes).
+      - "3030:3000"
     networks:
       - nexus-obs
     depends_on:
