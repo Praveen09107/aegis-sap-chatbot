@@ -2,13 +2,41 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* ─────────────────────────────────────────────────────────
+   AEGIS DESIGN SYSTEM
+   FRONTEND_01_DESIGN_SYSTEM.md, translated from Tailwind v3's
+   JS config (tailwind.config.js + rgb(var(--x) / <alpha-value>))
+   to Tailwind v4's CSS-first @theme model — confirmed live
+   2026-07-19 (F01) that v4 has no tailwind.config.js at all.
+
+   Kept alongside shadcn's own base tokens (background, foreground,
+   card, popover, secondary, muted, destructive, border, input, ring,
+   the chart-N set, the sidebar set — generated at F01's `shadcn init`)
+   rather than replacing them — the 24 shadcn primitives already built reference
+   those names directly and must keep working. The one real name
+   collision, --color-accent (shadcn's neutral hover gray vs. this
+   spec's electric cyan interactive accent), is resolved in AEGIS's
+   favor: this is authoritative — FRONTEND_MASTER_REFERENCE.md's own
+   "Design Token Quick Reference" and every later session's component
+   specs (F05 onward) reference bg-accent expecting cyan. The
+   resulting cosmetic side effect (shadcn's own hover/selected states
+   in dropdown-menu.tsx, select.tsx etc. tinting cyan instead of
+   neutral gray) is consistent with the design philosophy's own
+   framing of cyan as "the interactive accent" — not a bug.
+
+   RGB channel values (no rgb() wrapper) on the plain custom
+   properties below, referenced via rgb(var(--x)) inside @theme —
+   preserves the original spec's opacity-modifier intent
+   (bg-bg-primary/50 works) even though Tailwind v4's real engine no
+   longer needs the old <alpha-value> placeholder trick to do this.
+   ───────────────────────────────────────────────────────── */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* ── shadcn's own tokens (kept, F01) ── */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -28,7 +56,6 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -39,16 +66,204 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* ── AEGIS background ── */
+  --color-bg-primary: rgb(var(--bg-primary));
+  --color-bg-secondary: rgb(var(--bg-secondary));
+  --color-bg-tertiary: rgb(var(--bg-tertiary));
+  --color-bg-card: rgb(var(--bg-card));
+  --color-bg-elevated: rgb(var(--bg-elevated));
+  --color-bg-sunken: rgb(var(--bg-sunken));
+
+  /* ── AEGIS text ── */
+  --color-text-primary: rgb(var(--text-primary));
+  --color-text-secondary: rgb(var(--text-secondary));
+  --color-text-tertiary: rgb(var(--text-tertiary));
+  --color-text-disabled: rgb(var(--text-disabled));
+  --color-text-inverse: rgb(var(--text-inverse));
+
+  /* ── AEGIS borders ── */
+  --color-border-primary: rgb(var(--border-primary));
+  --color-border-secondary: rgb(var(--border-secondary));
+  --color-border-strong: rgb(var(--border-strong));
+  --color-border-focus: rgb(var(--border-focus));
+
+  /* ── AEGIS accent (cyan) — wins the collision with shadcn's default, see note above ── */
+  --color-accent: rgb(var(--aegis-accent));
+  --color-accent-hover: rgb(var(--aegis-accent-hover));
+  --color-accent-pressed: rgb(var(--aegis-accent-pressed));
+  --color-accent-subtle: rgb(var(--aegis-accent-subtle));
+  --color-accent-text: rgb(var(--aegis-accent-text));
+  --color-accent-fg: rgb(var(--aegis-accent-fg));
+
+  /* ── Confidence system: success (green) ── */
+  --color-success: rgb(var(--success));
+  --color-success-bg: rgb(var(--success-bg));
+  --color-success-border: rgb(var(--success-border));
+  --color-success-text: rgb(var(--success-text));
+
+  /* ── Confidence system: warning (amber) ── */
+  --color-warning: rgb(var(--warning));
+  --color-warning-bg: rgb(var(--warning-bg));
+  --color-warning-border: rgb(var(--warning-border));
+  --color-warning-text: rgb(var(--warning-text));
+
+  /* ── Confidence system: danger (insufficient / error) ── */
+  --color-danger: rgb(var(--danger));
+  --color-danger-bg: rgb(var(--danger-bg));
+  --color-danger-border: rgb(var(--danger-border));
+  --color-danger-text: rgb(var(--danger-text));
+
+  /* ── Info (admin accent, interactive) ── */
+  --color-info: rgb(var(--info));
+  --color-info-bg: rgb(var(--info-bg));
+  --color-info-border: rgb(var(--info-border));
+  --color-info-text: rgb(var(--info-text));
+
+  /* ── Purple (Mode C queries) ── */
+  --color-purple: rgb(var(--purple));
+  --color-purple-bg: rgb(var(--purple-bg));
+  --color-purple-border: rgb(var(--purple-border));
+  --color-purple-text: rgb(var(--purple-text));
+
+  /* ── Static navy scale (explicit dark-theme elements) ── */
+  --color-navy-950: #020508;
+  --color-navy-900: #060b14;
+  --color-navy-800: #0d1525;
+  --color-navy-700: #141d2e;
+  --color-navy-600: #1e2a3d;
+  --color-navy-500: #2a3d57;
+  --color-navy-400: #3b5070;
+  --color-navy-300: #4d6280;
+  --color-navy-200: #6b84a0;
+  --color-navy-100: #8fa8c2;
+
+  /* ── Static brand-cyan scale ── */
+  --color-brand-cyan-300: #67e8f9;
+  --color-brand-cyan-400: #22d3ee;
+  --color-brand-cyan-500: #06b6d4;
+  --color-brand-cyan-600: #0891b2;
+  --color-brand-cyan-700: #0e7490;
+
+  /* ── Typography ── */
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  --text-xs: 11px;
+  --text-xs--line-height: 1.45;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 12px;
+  --text-sm--line-height: 1.5;
+  --text-sm--letter-spacing: 0.005em;
+  --text-base: 14px;
+  --text-base--line-height: 1.6;
+  --text-md: 15px;
+  --text-md--line-height: 1.6;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.55;
+  --text-xl: 18px;
+  --text-xl--line-height: 1.45;
+  --text-xl--font-weight: 500;
+  --text-2xl: 20px;
+  --text-2xl--line-height: 1.4;
+  --text-3xl: 24px;
+  --text-3xl--line-height: 1.3;
+  --text-4xl: 30px;
+  --text-4xl--line-height: 1.2;
+  --text-5xl: 36px;
+  --text-5xl--line-height: 1.1;
+  --text-6xl: 48px;
+  --text-6xl--line-height: 1.0;
+
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ── Spacing (4px base unit, full explicit override) ── */
+  --spacing-0\.5: 2px;
+  --spacing-1: 4px;
+  --spacing-1\.5: 6px;
+  --spacing-2: 8px;
+  --spacing-2\.5: 10px;
+  --spacing-3: 12px;
+  --spacing-3\.5: 14px;
+  --spacing-4: 16px;
+  --spacing-4\.5: 18px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-7: 28px;
+  --spacing-8: 32px;
+  --spacing-9: 36px;
+  --spacing-10: 40px;
+  --spacing-11: 44px;
+  --spacing-12: 48px;
+  --spacing-13: 52px; /* topbar height */
+  --spacing-14: 56px;
+  --spacing-15: 60px;
+  --spacing-16: 64px; /* compose bar height */
+  --spacing-18: 72px;
+  --spacing-20: 80px;
+  --spacing-24: 96px;
+  --spacing-28: 112px;
+  --spacing-32: 128px;
+  --spacing-36: 144px;
+  --spacing-40: 160px;
+  --spacing-44: 176px;
+  --spacing-48: 192px;
+  --spacing-52: 208px;
+  --spacing-56: 224px;
+
+  /* ── Border radius (overrides shadcn's calc()-based scale) ── */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-4xl: 26px;
+  --radius-full: 9999px;
+
+  /* ── Box shadows ── */
+  --shadow-sm: var(--aegis-shadow-sm);
+  --shadow-md: var(--aegis-shadow-md);
+  --shadow-lg: var(--aegis-shadow-lg);
+  --shadow-xl: var(--aegis-shadow-xl);
+  --shadow-2xs: var(--aegis-shadow);
+  --shadow-focus-ring: 0 0 0 2px rgb(var(--border-focus));
+  --shadow-accent-glow: 0 0 0 3px rgb(var(--aegis-accent) / 0.25);
+  --shadow-inset-glow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+
+  /* ── Easing / duration ── */
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-aegis: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out-aegis: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-aegis: cubic-bezier(0.4, 0, 1, 1);
+
+  /* ── Screen breakpoints (desktop-only design) ── */
+  --breakpoint-md: 1280px; /* minimum supported width */
+  --breakpoint-lg: 1440px; /* optimal width */
+  --breakpoint-xl: 1920px; /* wide monitors */
+
+  /* ── Animations ── */
+  --animate-fade-in: fadeIn var(--duration-normal) var(--ease-out-aegis) both;
+  --animate-slide-up: slideUp var(--duration-slow) var(--ease-spring) both;
+  --animate-slide-down: slideDown var(--duration-slow) var(--ease-spring) both;
+  --animate-slide-right: slideInRight var(--duration-slow) var(--ease-spring) both;
+  --animate-scale-in: scaleIn var(--duration-normal) var(--ease-spring) both;
+  --animate-pulse-subtle: pulseSubtle 2.5s var(--ease-in-out-aegis) infinite;
+  --animate-status-pulse: statusPulse 2s var(--ease-in-out-aegis) infinite;
+  --animate-shimmer-aegis: shimmer 2s linear infinite;
+  --animate-blink: blink 0.9s step-start infinite;
+  --animate-spin-fast: spin 0.75s linear infinite;
+  --animate-spin-slow: spin 2s linear infinite;
+  --animate-counter-up: counterUp var(--duration-slower) var(--ease-spring) both;
 }
 
 :root {
+  /* ── shadcn's own tokens (kept, F01) ── */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -59,7 +274,6 @@
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
@@ -81,9 +295,99 @@
   --sidebar-ring: oklch(0.708 0 0);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
+
+  /* ── AEGIS background ── */
+  --bg-primary: 255 255 255; /* white */
+  --bg-secondary: 248 250 252; /* gray-50 */
+  --bg-tertiary: 241 245 249; /* gray-100 */
+  --bg-card: 255 255 255; /* white card */
+  --bg-elevated: 248 250 252; /* slightly off-white elevated */
+  --bg-sunken: 244 246 248; /* inset areas, code blocks */
+
+  /* ── AEGIS text ── */
+  --text-primary: 15 23 42; /* gray-900 */
+  --text-secondary: 71 85 105; /* gray-600 */
+  --text-tertiary: 148 163 184; /* gray-400 */
+  --text-disabled: 203 213 225; /* gray-300 */
+  --text-inverse: 255 255 255; /* white */
+
+  /* ── AEGIS borders ── */
+  --border-primary: 226 232 240; /* gray-200 */
+  --border-secondary: 203 213 225; /* gray-300 */
+  --border-strong: 148 163 184; /* gray-400 */
+  --border-focus: 6 182 212; /* cyan-500 */
+
+  /* ── AEGIS accent (cyan) ── */
+  --aegis-accent: 6 182 212; /* cyan-500 */
+  --aegis-accent-hover: 34 211 238; /* cyan-400 */
+  --aegis-accent-pressed: 8 145 178; /* cyan-600 */
+  --aegis-accent-subtle: 236 254 255; /* cyan-50 */
+  --aegis-accent-text: 14 116 144; /* cyan-800 */
+  --aegis-accent-fg: 255 255 255; /* text on accent bg */
+
+  /* ── Success (confidence green) ── */
+  --success: 16 185 129; /* emerald-500 */
+  --success-bg: 209 250 229; /* emerald-100 */
+  --success-border: 110 231 183; /* emerald-300 */
+  --success-text: 6 95 70; /* emerald-800 */
+
+  /* ── Warning (confidence amber) ── */
+  --warning: 245 158 11; /* amber-500 */
+  --warning-bg: 254 243 199; /* amber-100 */
+  --warning-border: 252 211 77; /* amber-300 */
+  --warning-text: 146 64 14; /* amber-800 */
+
+  /* ── Danger (insufficient / error) ── */
+  --danger: 239 68 68; /* red-500 */
+  --danger-bg: 254 226 226; /* red-100 */
+  --danger-border: 252 165 165; /* red-300 */
+  --danger-text: 153 27 27; /* red-800 */
+
+  /* ── Info (admin accent, interactive) ── */
+  --info: 59 130 246; /* blue-500 */
+  --info-bg: 239 246 255; /* blue-50 */
+  --info-border: 186 230 253; /* blue-200 */
+  --info-text: 30 64 175; /* blue-800 */
+
+  /* ── Purple (Mode C queries) ── */
+  --purple: 139 92 246; /* violet-500 */
+  --purple-bg: 237 233 254; /* violet-100 */
+  --purple-border: 196 181 253; /* violet-300 */
+  --purple-text: 91 33 182; /* violet-800 */
+
+  /* ── Shadows (light mode: drop shadows) ── */
+  --aegis-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
+  --aegis-shadow: 0 1px 3px rgb(0 0 0 / 0.10), 0 1px 2px rgb(0 0 0 / 0.06);
+  --aegis-shadow-md: 0 4px 6px rgb(0 0 0 / 0.07), 0 2px 4px rgb(0 0 0 / 0.05);
+  --aegis-shadow-lg: 0 10px 15px rgb(0 0 0 / 0.10), 0 4px 6px rgb(0 0 0 / 0.05);
+  --aegis-shadow-xl: 0 20px 25px rgb(0 0 0 / 0.10), 0 10px 10px rgb(0 0 0 / 0.04);
+
+  /* ── Animation durations ── */
+  --duration-fast: 100ms;
+  --duration-normal: 150ms;
+  --duration-slow: 250ms;
+  --duration-slower: 400ms;
+
+  /* ── Layout constants ── */
+  --topbar-height: 52px;
+  --employee-sidebar-width: 180px;
+  --employee-panel-width: 210px;
+  --employee-panel-icon-width: 48px;
+  --admin-sidebar-width: 220px;
+  --compose-height: 64px;
+
+  /* ── Z-index layers ── */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-notification: 500;
+  --z-command: 600;
+  --z-toast: 700;
 }
 
 .dark {
+  /* ── shadcn's own tokens (kept, F01) ── */
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -96,7 +400,6 @@
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
@@ -115,16 +418,400 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* ── AEGIS background ── */
+  --bg-primary: 6 11 20; /* navy-900 */
+  --bg-secondary: 13 21 37; /* navy-800 */
+  --bg-tertiary: 20 29 46; /* navy-700 */
+  --bg-card: 13 21 37; /* navy-800 */
+  --bg-elevated: 20 29 46; /* navy-700 */
+  --bg-sunken: 6 11 20; /* navy-900 */
+
+  /* ── AEGIS text ── */
+  --text-primary: 241 245 249; /* gray-100 */
+  --text-secondary: 148 163 184; /* gray-400 */
+  --text-tertiary: 77 98 128; /* navy-300 */
+  --text-disabled: 42 61 87; /* navy-500 */
+  --text-inverse: 15 23 42; /* gray-900 */
+
+  /* ── AEGIS borders ── */
+  --border-primary: 30 42 61; /* navy-600 */
+  --border-secondary: 42 61 87; /* navy-500 */
+  --border-strong: 77 98 128; /* navy-300 */
+  --border-focus: 6 182 212; /* cyan-500 (same) */
+
+  /* ── AEGIS accent (same values; dark-adjusted subtleties) ── */
+  --aegis-accent: 6 182 212;
+  --aegis-accent-hover: 34 211 238;
+  --aegis-accent-pressed: 8 145 178;
+  --aegis-accent-subtle: 12 44 53; /* very dark cyan tint */
+  --aegis-accent-text: 103 232 249; /* cyan-300 (lighter for dark bg) */
+  --aegis-accent-fg: 255 255 255;
+
+  /* ── Success (dark mode: deeper greens) ── */
+  --success: 16 185 129;
+  --success-bg: 6 53 36;
+  --success-border: 6 95 70;
+  --success-text: 110 231 183;
+
+  /* ── Warning (dark mode: deeper ambers) ── */
+  --warning: 245 158 11;
+  --warning-bg: 52 31 5;
+  --warning-border: 107 58 10;
+  --warning-text: 252 211 77;
+
+  /* ── Danger (dark mode: deeper reds) ── */
+  --danger: 239 68 68;
+  --danger-bg: 45 14 14;
+  --danger-border: 107 23 23;
+  --danger-text: 252 165 165;
+
+  /* ── Info (dark mode: deeper blues) ── */
+  --info: 59 130 246;
+  --info-bg: 15 30 60;
+  --info-border: 30 58 138;
+  --info-text: 147 197 253;
+
+  /* ── Purple (dark mode) ── */
+  --purple: 139 92 246;
+  --purple-bg: 30 20 60;
+  --purple-border: 60 40 120;
+  --purple-text: 196 181 253;
+
+  /* ── Shadows (dark mode: subtle inner glow + deeper drops) ── */
+  --aegis-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.40);
+  --aegis-shadow: 0 1px 3px rgb(0 0 0 / 0.50), inset 0 1px 0 rgb(255 255 255 / 0.03);
+  --aegis-shadow-md: 0 4px 6px rgb(0 0 0 / 0.50), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --aegis-shadow-lg: 0 10px 15px rgb(0 0 0 / 0.60), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --aegis-shadow-xl: 0 20px 25px rgb(0 0 0 / 0.70), inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
+
+/* ─────────────────────────────────────────────────────────
+   BASE ELEMENT STYLES
+   ───────────────────────────────────────────────────────── */
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    box-sizing: border-box;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
+
   html {
-    @apply font-sans;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary font-sans;
+    margin: 0;
+    padding: 0;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ── Scrollbar styling ── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border-primary rounded-full;
+    transition: background var(--duration-normal) var(--ease-out-aegis);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-border-secondary;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* ── Focus visible (keyboard navigation) ── */
+  :focus-visible {
+    outline: 2px solid rgb(var(--border-focus));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* ── Text selection ── */
+  ::selection {
+    background: rgb(var(--aegis-accent-subtle));
+    color: rgb(var(--text-primary));
+  }
+
+  /* ── Input reset ── */
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  /* ── Image defaults ── */
+  img,
+  video {
+    max-width: 100%;
+    display: block;
+  }
+
+  /* ── Anchor reset ── */
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* ── Code and monospace ── */
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   UTILITY CLASSES
+   ───────────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Tabular numbers for metrics */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* SAP monospace styling for entity chips */
+  .font-sap {
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+
+  /* Text balance for headings */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Truncate with ellipsis */
+  .truncate-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Shimmer loading animation */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--bg-tertiary)) 0%,
+      rgb(var(--bg-secondary)) 50%,
+      rgb(var(--bg-tertiary)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* Confidence aura left borders */
+  .aura-green {
+    border-left: 3px solid rgb(var(--success));
+  }
+  .aura-amber {
+    border-left: 3px solid rgb(var(--warning));
+  }
+  .aura-none {
+    border-left: 3px solid rgb(var(--border-primary));
+  }
+  .aura-streaming {
+    border-left: 3px solid rgb(var(--border-secondary));
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Admin nav active indicator */
+  .nav-active-indicator {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    background: rgb(var(--aegis-accent));
+    border-radius: 0 3px 3px 0;
+  }
+
+  /* Named z-index utilities — plain classes rather than a Tailwind
+     theme namespace: z-index isn't one of Tailwind v4's themed
+     utility categories, so `z-dropdown` etc. wouldn't be generated
+     from a --z-dropdown @theme key the way bg-* or text-* utilities
+     are from --color-*. */
+  .z-dropdown {
+    z-index: var(--z-dropdown);
+  }
+  .z-sticky {
+    z-index: var(--z-sticky);
+  }
+  .z-overlay {
+    z-index: var(--z-overlay);
+  }
+  .z-modal {
+    z-index: var(--z-modal);
+  }
+  .z-notification {
+    z-index: var(--z-notification);
+  }
+  .z-command {
+    z-index: var(--z-command);
+  }
+  .z-toast {
+    z-index: var(--z-toast);
+  }
+}
+
+/* Reduced motion: disable animations (top-level media query, not
+   @layer utilities — a bare @media block inside @layer only applies
+   to rules declared within it, and this must override every
+   animation/transition on the page, including component-level ones
+   declared in later @layer blocks or unlayered styles). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   KEYFRAME ANIMATIONS
+   ───────────────────────────────────────────────────────── */
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulseSubtle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes statusPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes counterUp {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
