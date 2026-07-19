@@ -4,8 +4,10 @@ Manages WebSocket connections for real-time streaming responses.
 
 Architecture:
 - WebSocket stays open after initial response (for vision_complete signals)
-- In-process AsyncGenerator for streaming (no Redis Pub/Sub in demo)
-- Forwards tokens from generation pipeline to browser
+- Generation tokens are published to Redis Pub/Sub ("stream:{session_id}")
+  by reasoning_service.generate_and_stream() and relayed to this browser
+  connection by _relay_pubsub_stream_to_websocket, running concurrently
+  with generation.
 - Proactively sends refined response when vision processing completes
 """
 import json
@@ -173,7 +175,21 @@ async def _handle_client_message(
             REQUEST_COUNTER.labels(endpoint="/ws/chat", status="error").inc()
             return
 
-        # Stage C: Reasoning — streams tokens via Redis Pub/Sub
+        # Stage C: Reasoning — streams tokens via Redis Pub/Sub.
+        #
+        # Real bug found and fixed live (2026-07-19, first real end-to-end
+        # test in this project's history — every prior attempt was blocked
+        # at the auth/401 stage by OPEN-13, so this path had never actually
+        # run before): reasoning_service.generate_and_stream() publishes
+        # every token to the "stream:{session_id}" Redis Pub/Sub channel
+        # (redis_session.publish_token/publish_stream_complete), but nothing
+        # anywhere in this codebase ever subscribed to it — a real employee
+        # has never once seen a streamed answer arrive in their browser,
+        # regardless of how good generation quality was, since this feature
+        # was originally built. _relay_pubsub_stream_to_websocket below
+        # subscribes and forwards in real time, running concurrently with
+        # generation rather than after it (a plain "subscribe after starting
+        # generation" ordering would miss the earliest tokens).
         from app.services.reasoning_service import reasoning_service
         session_data_current = await _rs.get_session(session_id)
         session_current = (
@@ -183,13 +199,25 @@ async def _handle_client_message(
         )
 
         generation_started_at = time.monotonic()
-        answer_text = await reasoning_service.generate_and_stream(
-            enriched_query=enriched,
-            retrieval_result=retrieval_result,
-            session=session_current,
-            diagnostic_obj=diag_obj,
-            session_id=session_id,
-        )
+        relay_task = asyncio.create_task(_relay_pubsub_stream_to_websocket(websocket, session_id))
+        try:
+            answer_text = await reasoning_service.generate_and_stream(
+                enriched_query=enriched,
+                retrieval_result=retrieval_result,
+                session=session_current,
+                diagnostic_obj=diag_obj,
+                session_id=session_id,
+            )
+        finally:
+            # generate_and_stream always publishes stream_complete on its own
+            # exit path (success or its internal except-block), which is what
+            # normally ends the relay — this is a bounded safety net only,
+            # in case that publish itself never lands (e.g. Redis blips
+            # mid-generation) and the relay would otherwise wait forever.
+            try:
+                await asyncio.wait_for(relay_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                relay_task.cancel()
         generation_seconds = time.monotonic() - generation_started_at
 
         # Validation (Session 17): Tier 1 governance + Tier 2 NLI + Tier 3 judge,
@@ -210,6 +238,16 @@ async def _handle_client_message(
 
         await websocket.send_json({
             "type": "validation_result",
+            # answer_text was missing from this payload entirely before this
+            # fix — the client had no reliable way to know the final answer
+            # text at all, and specifically no way to know when regeneration
+            # (validate_with_regeneration, above) produced a DIFFERENT final
+            # answer than whatever was streamed moments earlier, since
+            # regeneration calls model_gateway.generate_streaming() directly
+            # and never publishes to Redis Pub/Sub. This field is the
+            # authoritative final text — a client should prefer it over
+            # whatever it accumulated from "token" messages if the two differ.
+            "answer_text": validation_result.answer_text,
             "validation_score": validation_result.validation_score,
             "confidence_badge": validation_result.confidence_badge,
             "attribution_panel": validation_result.attribution_panel,
@@ -261,6 +299,49 @@ async def _handle_client_message(
 
     elif message_type == "ping":
         await websocket.send_json({"type": "pong"})
+
+
+async def _relay_pubsub_stream_to_websocket(websocket: WebSocket, session_id: str) -> None:
+    """
+    Subscribes to Redis Pub/Sub channel "stream:{session_id}" and forwards
+    every message to the real WebSocket client in real time, until a
+    "stream_complete" message arrives. See the real bug this fixes,
+    documented at this function's call site above.
+
+    Runs as its own asyncio task, concurrently with the generation call
+    that publishes to this channel — not after it, since generation can
+    start publishing tokens before this function's subscribe() call would
+    otherwise be in place to receive them.
+    """
+    from app.infrastructure.redis_client import redis_session
+
+    channel = f"stream:{session_id}"
+    pubsub = redis_session.redis.pubsub()
+    try:
+        await pubsub.subscribe(channel)
+        while True:
+            try:
+                raw = await pubsub.get_message(ignore_subscribe_messages=True, timeout=30.0)
+            except Exception as e:
+                logger.error(f"Pub/Sub relay error for session {session_id}: {e}")
+                break
+            if raw is None:
+                continue  # no message this poll interval — keep waiting
+            try:
+                msg = json.loads(raw["data"])
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+            if websocket.client_state != WebSocketState.CONNECTED:
+                break
+            await websocket.send_json({**msg, "session_id": session_id})
+            if msg.get("type") == "stream_complete":
+                break
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass
 
 
 async def _handle_vision_complete(websocket: WebSocket, session_id: str):
