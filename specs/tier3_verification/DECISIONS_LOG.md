@@ -975,7 +975,7 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 
 **OPEN-10 — RESOLVED by DEC-060.** ~~`.env.example`'s `KEYCLOAK_CLIENT_ID=aegis-backend` is the same stale value corrected in `secrets-share/.env` by DEC-046, left uncorrected here.~~ The broader audit this entry itself called for was done: 3 real drifts found and fixed (`KEYCLOAK_CLIENT_ID`, pre-PgBouncer `POSTGRES_HOST`/`PORT`/`USER`, dead `DATABASE_URL`), plus one more confirmed-dead placeholder (`APP_SECRET_KEY`) found in the same pass. Full detail in `DEC-060`.
 
-**OPEN-11 — `FRONTEND_AGENT_SESSION_GUIDE_v2.md`'s own `RETROFIT STATUS` table is directly false for this checkout.** Confirmed directly (DEC-047): zero `.tsx`/frontend-component files exist anywhere in this repository's history before Session 21, yet the guide marks F01 (project scaffold) through F18 as "Already built." All 18 need their retrofit/fresh-build status individually re-audited from F01 onward, the same way `BACKEND_AGENT_SESSION_GUIDE_v4.md` already was (OPEN-02) — not just the admin sessions (F11-F14). **Blocks every frontend F-session (F01-F18) from starting as currently written.**
+**OPEN-11 — RESOLVED by DEC-062.** ~~`FRONTEND_AGENT_SESSION_GUIDE_v2.md`'s own `RETROFIT STATUS` table is directly false for this checkout.~~ All 18 sessions individually re-audited against a live filesystem check, the same standard `BACKEND_AGENT_SESSION_GUIDE_v4.md` was already held to (`OPEN-02`). Every F01-F18 session's status and prompt text corrected from "already built, retrofit" to "fresh build" — see `DEC-062` for the full finding and `FRONTEND_AGENT_SESSION_GUIDE_v2.md`'s own new "RE-AUDIT NOTICE" section.
 
 **OPEN-14 — Decision made by `DEC-060`, implementation not yet done.** `vault_client.py` is confirmed dead code (`DEC-051`'s PgBouncer fix moved every Postgres call site to static credentials), and so are the Transit and PKI engines `scripts/setup_vault.py` also provisions — Vault has never done anything live in this project except the now-superseded dynamic-Postgres-credential path. Asked directly whether to delete it or repurpose it: **chosen direction is repurpose** — use Vault's already-working AppRole auth to store the 5 external provider API keys (KV v2 secrets engine) instead of a flat `.env`, directly targeting the real key-rotation toil surfaced by `DEC-059`. Scoped as a named follow-up initiative (see `DEC-060` for the concrete scope), not built in this pass — it's a real multi-file feature (new engine provisioning, a `vault_client.py` rewrite, a caching/refresh design, a decision on whether it fully replaces `.env` for these 5 keys), not a cleanup. No files changed for this item in `DEC-060` — `vault_client.py`, `docker-compose.yml`'s `aegis-vault` service, and `setup_vault.py` all stay as-is until that follow-up is picked up.
 
@@ -1081,6 +1081,24 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 
 ---
 
+### DEC-062 — `FRONTEND_AGENT_SESSION_GUIDE_v2.md` Re-Audited: Every F01-F18 Session Corrected From "Already Built" to Fresh Build
+
+**Status:** CONFIRMED
+
+**Decision:** Resolves `OPEN-11`, following the highest-priority recommendation from `DEC-059`'s and `DEC-060`'s next-steps assessments — this was flagged as the largest remaining risk before any frontend code gets written, since starting F01 against the guide as it stood risked repeating, at 18-session scale, the exact near-miss `DEC-047` already caught once (Session 21 almost editing two admin-shell files that turned out not to exist).
+
+**Live-verified, not re-derived from the guide's own prior text:** `find frontend -type f -not -path "*/node_modules/*" -not -path "*/.next/*"` returns 17 files total. Under `src/`, exactly 6 real source files exist — `src/lib/auth.ts` and 4 files under `src/app/api/auth/`, plus `src/app/api/proxy/[...path]/route.ts` — all added in a single commit (`07cb029`, "Session 21," built ad hoc for real backend/Keycloak integration testing, confirmed via `git log --all -- frontend/`). No `layout.tsx`, no `page.tsx`, no `src/components/`, no `src/hooks/`, no `src/store/`, no `components.json` (shadcn was never initialized), and `package.json` has none of the dependencies F01/`FRONTEND_04_DEPENDENCIES.md` requires (no shadcn primitives, no `@tanstack/react-query`, no state-management library, no `@react-pdf/renderer`, no animation library). None of the ~197 files the guide's `RETROFIT STATUS` table claimed already existed for F01-F18 are present. None of the 6 real files have ever actually been executed — no frontend container has ever appeared in this project's `docker compose ps` history, confirmed by direct inspection.
+
+**Correction applied at the same standard `BACKEND_AGENT_SESSION_GUIDE_v4.md` was already held to for the analogous `OPEN-02`/`OPEN-03` finding** — not just a table update, every individual session's own prompt text rewritten. A new "RE-AUDIT NOTICE" section added at the top of the guide (before "WHAT CHANGED FROM v1.0," which itself remains accurate and is preserved — the correction is scoped to the retrofit-vs-fresh-build framing, not the substance of which amendment/supplement fix applies to which session). The `RETROFIT STATUS` table rewritten: every F01-F18 row now reads **FRESH BUILD** instead of "Already built." Every session's prompt text changed from "This session is already built, apply fix X to the existing file" to "This session has not been built — build file Y from its original spec, with fix X already correct from the start" — matching the actual content of every amendment/supplement touchpoint the guide had already correctly identified, just reframed for the real starting state.
+
+**Two sessions get a narrower, more precise correction than "build everything from scratch":** F03 (`src/lib/auth.ts` + the 4 auth API routes) and F18 (the proxy route) are told to verify and complete the 6 real pre-existing files against their real specs, not discard and rewrite them — they represent genuine, if never-executed, work, and treating them as disposable would be its own inaccuracy in the opposite direction from the guide's original "already built" overclaim. F16's entry is also corrected in a narrower way: its "Sona Comstar" reference was already confirmed (by an earlier pass, preserved) to be a documentation heading only with no functional code to fix — this remains true and is restated as "no functional fix required," not "retrofit needed."
+
+**Not touched in this pass:** the guide's underlying technical content — which amendment file maps to which session, which supplement supersedes which original document, the exact props/paths specified for components like `EmptyState.tsx` — none of that was found to be wrong, only the assumption that it had already been applied to code that doesn't exist. `FRONTEND_35_AGENT_SESSION_GUIDE.md` (v1.0) was not reconciled or touched; this guide already states it replaces v1.0 in full.
+
+**Affects:** `specs/tier0_agent_guide/FRONTEND_AGENT_SESSION_GUIDE_v2.md` (full retrofit-status and per-session prompt-text correction, new "RE-AUDIT NOTICE" section).
+
+---
+
 # CROSS-REFERENCE INDEX — WHICH DECISION AFFECTS WHICH FILE
 
 | File / Session | Relevant Decisions |
@@ -1115,7 +1133,7 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 | `docs/CLOUD_DEPLOYMENT_GUIDE.md` | DEC-009, DEC-014 |
 | `docs/TROUBLESHOOTING_RUNBOOK.md` | DEC-006, DEC-018 through DEC-021, DEC-024, DEC-033 |
 | `BACKEND_AGENT_SESSION_GUIDE_v4.md` | DEC-026 through DEC-034 (all sessions it reorders/annotates), OPEN-02, OPEN-03 |
-| `FRONTEND_AGENT_SESSION_GUIDE_v2.md` | DEC-028, DEC-035, OPEN-04 |
+| `FRONTEND_AGENT_SESSION_GUIDE_v2.md` | DEC-028, DEC-035, OPEN-04, DEC-062 (OPEN-11 — full retrofit-status re-audit, every F01-F18 corrected to fresh build) |
 | `tier5_historical/HISTORICAL_ARCHITECTURE_EVOLUTION.md` | DEC-025, DEC-026, DEC-034 (all three drift/reconciliation findings it indexes) |
 | Specification folder structure overall | DEC-026, DEC-028, DEC-029, DEC-032 |
 
