@@ -1,7 +1,7 @@
 ---
 description: Pre-session environment check and spec-reading discipline before starting any AEGIS session
 argument-hint: [session-number-or-name]
-allowed-tools: Bash(pwd:*), Bash(git branch:*), Bash(docker ps:*), Bash(python --version:*)
+allowed-tools: Bash(pwd:*), Bash(git branch:*), Bash(docker ps:*), Bash(python --version:*), Bash(node --version:*), Bash(npm --version:*)
 ---
 
 ## Environment check
@@ -9,8 +9,10 @@ allowed-tools: Bash(pwd:*), Bash(git branch:*), Bash(docker ps:*), Bash(python -
 !`git branch --show-current`
 !`docker ps --format "{{.Names}}" | wc -l`
 !`python --version`
+!`node --version`
+!`npm --version`
 
-Confirm the above matches expectations before proceeding: correct project root, correct git branch for this session, Docker services running if this session is after IMPL_03, correct Python version. If anything looks wrong, stop and report it rather than proceeding on an unconfirmed environment.
+Confirm the above matches expectations before proceeding: correct project root, correct git branch for this session, correct Python version (backend `IMPL_XX` sessions) or correct Node version — `>=22.0.0` — (frontend `FXX` sessions, per `FRONTEND_SESSION_GUIDE_PART1_FOUNDATION.md`'s stack line; the Python check is simply irrelevant for these, not a failure). Docker services running: required for any `FXX` session from **F09 onward** (real backend contract — `FRONTEND_SESSION_GUIDE_PART2_EMPLOYEE_ADMIN.md` F09's own note) and for any backend session after `IMPL_03`; not required for `F01`–`F08` (scaffold/design-system/component work has no backend dependency). If anything looks wrong, stop and report it rather than proceeding on an unconfirmed environment.
 
 ## Spec-reading discipline for session: $ARGUMENTS
 

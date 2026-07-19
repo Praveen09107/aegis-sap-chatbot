@@ -448,7 +448,6 @@ export const queryKeys = {
 /admin                    → Redirect → /admin/dashboard
 /admin/dashboard          → Live quality overview
 /admin/documents          → Document management
-/admin/quick-entry        → Structured form-based knowledge contribution
 /admin/registry           → Known patterns registry
 /admin/config-snapshot    → SAP configuration values
 /admin/knowledge-gaps     → Gap analysis
@@ -458,13 +457,6 @@ export const queryKeys = {
 /admin/system-health      → 19 Docker service monitor
 /admin/analytics          → Quality trend reporting
 ```
-
-- Quick Entry (/admin/quick-entry) — Structured form-based knowledge contribution
-  without requiring document creation. Supports Error Guide, Procedure, and
-  Configuration Reference templates with multimodal screenshot attachment and
-  automatic vision enrichment. Entries bypass document pipeline Stages 1–3 and
-  use structure-aware chunking superior to generic document chunking.
-  Documents: FRONTEND_36, FRONTEND_37, FRONTEND_38, FRONTEND_39, FRONTEND_40
 
 ---
 
@@ -609,48 +601,55 @@ export function cn(...inputs: ClassValue[]) {
 
 ---
 
-## DOCUMENT INVENTORY (35 documents)
+## DOCUMENT INVENTORY (39 numbered content documents + this reference + 5 supplements + 1 amendment = 46 total)
 
-Agent refers to this to understand what each document covers and which session creates what.
+**Correction (2026-07-19):** this table originally proposed a session grouping that predates the real, final session structure — `FRONTEND_35_AGENT_SESSION_GUIDE.md` (written a full day later, after all other `FRONTEND_XX` documents already existed) reflects what actually got built into the operative session guide and is the authoritative grouping. This table is corrected to match it, not the reverse — a stale early-planning table should never contradict the detailed guide every session actually follows.
 
-| Document | Session | What it produces |
+| Document | Real session | What it produces |
 |---|---|---|
 | FRONTEND_MASTER_REFERENCE | Every session | Attached every time |
-| FRONTEND_01_DESIGN_SYSTEM | F01 | globals.css, tailwind.config.js, fonts.ts |
-| FRONTEND_02_ARCHITECTURE | F02 | package.json, tsconfig, next.config.js, providers |
-| FRONTEND_03_TAILWIND_GLOBALS | F01 | Complete Tailwind + CSS token implementation |
-| FRONTEND_04_DEPENDENCIES | F02 | Complete package.json with all packages |
-| FRONTEND_05_CORE_COMPONENTS | F03 | Button, Input, Badge, Card, Avatar, Spinner |
-| FRONTEND_06_DATA_COMPONENTS | F04 | DataTable, MetricCard, Charts, StatusGrid |
-| FRONTEND_07_OVERLAY_COMPONENTS | F04 | Modal, Drawer, CommandPalette, Toast, Tooltip |
-| FRONTEND_08_CHAT_COMPONENTS | F05 | All chat-specific components |
-| FRONTEND_09_LAYOUT_COMPONENTS | F05 | AppShell, ThreePanel, AdminShell, Navigation |
-| FRONTEND_10_ZUSTAND_STORES | F06 | All 5 stores complete |
-| FRONTEND_11_TANSTACK_QUERY | F06 | QueryClient, hooks, polling config |
-| FRONTEND_12_EMPLOYEE_CHAT | F07 | Chat page, layout, WebSocket integration |
-| FRONTEND_13_EMPLOYEE_CHAT_FEATURES | F08 | Drag-drop, entity chips, keyboard shortcuts, SAP detection |
-| FRONTEND_14_EMPLOYEE_HISTORY | F09 | Session history page with PostgreSQL search |
-| FRONTEND_15_EMPLOYEE_ONBOARDING | F09 | 5-step modal walkthrough |
-| FRONTEND_16_ADMIN_SHELL | F10 | Admin sidebar, topbar, navigation |
-| FRONTEND_17_ADMIN_DASHBOARD | F10 | Live metrics page with Recharts |
-| FRONTEND_18_ADMIN_DOCUMENTS | F11 | Upload zone, ingestion tracking |
+| FRONTEND_01_DESIGN_SYSTEM | F02 | globals.css, tailwind.config.js, fonts.ts |
+| FRONTEND_02_ARCHITECTURE | F03 | Providers, infrastructure, auth plumbing |
+| FRONTEND_03_TAILWIND_GLOBALS | F04 | Tailwind patterns, shadcn overrides |
+| FRONTEND_04_DEPENDENCIES | F01 | package.json, project scaffold |
+| FRONTEND_05_CORE_COMPONENTS | F05 | Button, Input, Badge, Card, Avatar, Spinner |
+| FRONTEND_06_DATA_COMPONENTS | F05b | DataTable, MetricCard, Charts, StatusGrid |
+| FRONTEND_07_OVERLAY_COMPONENTS | F05b | Modal, Drawer, CommandPalette, Toast, Tooltip |
+| FRONTEND_08_CHAT_COMPONENTS | F06 | All chat-specific components |
+| FRONTEND_09_LAYOUT_COMPONENTS | F07 | AppShell, ThreePanel, AdminShell, Navigation |
+| FRONTEND_10_ZUSTAND_STORES | F08 | All 5 stores complete |
+| FRONTEND_11_TANSTACK_QUERY | F08 | QueryClient, hooks, polling config |
+| FRONTEND_12_EMPLOYEE_CHAT | F09 | Chat page, layout, WebSocket integration |
+| FRONTEND_13_EMPLOYEE_CHAT_FEATURES | F09 | Drag-drop, entity chips, keyboard shortcuts |
+| FRONTEND_14_EMPLOYEE_HISTORY | F10 | Session history page |
+| FRONTEND_15_EMPLOYEE_ONBOARDING | F10 | 5-step modal walkthrough |
+| FRONTEND_16_ADMIN_SHELL | F11 | Admin sidebar, topbar, navigation |
+| FRONTEND_17_ADMIN_DASHBOARD | F11 | Live metrics page |
+| FRONTEND_18_ADMIN_DOCUMENTS | F12 | Upload zone, ingestion tracking |
 | FRONTEND_19_ADMIN_REGISTRY_CONFIG | F12 | Registry workflow + config snapshot |
 | FRONTEND_20_ADMIN_GAPS_AUDIT | F13 | Gap cards + audit timeline |
-| FRONTEND_21_ADMIN_REVIEW_TICKETS | F14 | Review split-pane + kanban |
-| FRONTEND_22_ADMIN_HEALTH_ANALYTICS | F15 | System health grid + analytics charts |
-| FRONTEND_23_FRAMER_MOTION | F16 | All page transitions and animations |
-| FRONTEND_24_MICRO_INTERACTIONS | F16 | Hover, focus, loading states |
-| FRONTEND_25_DARK_MODE | F17 | Complete dark mode system |
-| FRONTEND_26_ERROR_HANDLING | F17 | Error boundaries, offline, reconnection |
+| FRONTEND_21_ADMIN_REVIEW_TICKETS | F13 | Review split-pane + kanban |
+| FRONTEND_22_ADMIN_HEALTH_ANALYTICS | F14 | System health grid + analytics charts |
+| FRONTEND_23_FRAMER_MOTION | F15 | Page transitions and animations |
+| FRONTEND_24_MICRO_INTERACTIONS | F15 | Hover, focus, loading states |
+| FRONTEND_25_DARK_MODE | F16 | Complete dark mode system |
+| FRONTEND_26_ERROR_HANDLING | F16 | Error boundaries, offline, reconnection |
 | FRONTEND_27_ACCESSIBILITY | F17 | ARIA, keyboard nav, focus management |
 | FRONTEND_28_PERFORMANCE | F17 | Lazy loading, virtualization, bundles |
-| FRONTEND_29_BACKEND_SESSION_API | F18 | New session endpoints (backend) |
-| FRONTEND_30_BACKEND_ADMIN_METRICS | F18 | Admin metrics endpoint (backend) |
-| FRONTEND_31_BACKEND_ANALYTICS | F18 | Analytics endpoints (backend) |
-| FRONTEND_32_BACKEND_HEALTH | F18 | System health endpoint (backend) |
-| FRONTEND_33_BACKEND_PREFERENCES | F18 | Preferences + WS extension (backend) |
+| FRONTEND_29_33_BACKEND_API_CONTRACTS | F18 (superseded by SUPPLEMENT_03/04) | Original backend API contracts |
 | FRONTEND_34_VERIFICATION | F18 | Test checklist + visual QA |
-| FRONTEND_35_AGENT_SESSION_GUIDE | Every | 35-session prompts |
+| FRONTEND_35_AGENT_SESSION_GUIDE | Every | Session prompts (this is the authoritative session structure) |
+| FRONTEND_36_ADMIN_QUICK_ENTRY_LIST | F19 | Quick Entry list page |
+| FRONTEND_37_ADMIN_QUICK_ENTRY_FORM | F19 | Quick Entry multi-step form |
+| FRONTEND_38_ADMIN_QUICK_ENTRY_FORM_FIELDS | F19 | Quick Entry field components |
+| FRONTEND_39_ADMIN_QUICK_ENTRY_SCREENSHOT | F19 | Screenshot upload/review UI |
+| FRONTEND_40_EMPLOYEE_ATTRIBUTION_SCREENSHOTS | F19 | Employee-side screenshot attribution |
+| AMENDMENT_GENERALIZATION_FRONTEND | F02/F03/F05/F06/F07/F10/F11/F12/F13 | 11 branding-touchpoint fixes, woven into each session |
+| FRONTEND_SUPPLEMENT_01_CRITICAL_BUG_FIXES | F10 | Onboarding fixes |
+| FRONTEND_SUPPLEMENT_02_PROXY_ROUTE_PDF | F03, F18 | Proxy route + complete PDF export |
+| FRONTEND_SUPPLEMENT_03_SESSION_API_COMPLETE | F18 | Supersedes FRONTEND_29 |
+| FRONTEND_SUPPLEMENT_04_BACKEND_APIS_30_33 | F18 | Supersedes FRONTEND_30-33 |
+| FRONTEND_SUPPLEMENT_05_PRODUCTION_HARDENING | F09/F10/F11/F12/F13 | Multi-tab coordination, stream recovery, timestamp/import-path fixes |
 
 ---
 
