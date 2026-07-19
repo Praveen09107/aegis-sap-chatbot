@@ -41,6 +41,21 @@ export function getUserRole(): "employee" | "it-admin" | null {
   return match ? (match[1] as "employee" | "it-admin") : null;
 }
 
+export interface AuthState {
+  isAuthenticated: boolean;
+  role: "employee" | "it-admin" | null;
+}
+
+export function getAuthState(): AuthState {
+  const role = getUserRole();
+  if (!role) return { isAuthenticated: false, role: null };
+  return { isAuthenticated: true, role };
+}
+
+// IMPORTANT: always returns null in client-side code — access_token is an
+// HttpOnly cookie, invisible to JavaScript by design. All API calls must go
+// through /api/proxy/, which reads the cookie server-side and attaches the
+// Authorization header there. Never build an Authorization header from this.
 export function getAccessToken(): string | null {
-  return null; // HttpOnly — not readable from JS. Use /api/proxy/ for API calls.
+  return null;
 }

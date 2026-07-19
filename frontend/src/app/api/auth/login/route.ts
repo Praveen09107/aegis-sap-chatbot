@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+interface KeycloakTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
 // aegis-chat is a confidential Keycloak client (setup_keycloak.py:
 // publicClient: False), so the ROPC token exchange must happen server-side
 // — KEYCLOAK_CLIENT_SECRET is never NEXT_PUBLIC_ and must never reach the
@@ -8,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   const { username, password } = await request.json();
 
-  const KEYCLOAK_URL = `${process.env.KEYCLOAK_INTERNAL_URL}/realms/aegis-realm/protocol/openid-connect/token`;
+  const KEYCLOAK_URL = `${process.env.KEYCLOAK_INTERNAL_URL}/realms/${process.env.KEYCLOAK_REALM || "aegis-realm"}/protocol/openid-connect/token`;
   const params = new URLSearchParams({
     grant_type: "password",
     client_id: process.env.KEYCLOAK_CLIENT_ID || "aegis-chat",
@@ -17,7 +23,7 @@ export async function POST(request: NextRequest) {
     password,
   });
 
-  let data: any;
+  let data: KeycloakTokenResponse;
   try {
     const resp = await fetch(KEYCLOAK_URL, {
       method: "POST",
