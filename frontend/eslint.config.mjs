@@ -17,6 +17,9 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "test-results/**",
     "playwright-report/**",
+    // Vite's build cache for Playwright Component Testing (F04) — bundled
+    // vendor JS, not source.
+    "playwright/.cache/**",
   ]),
 ]);
 

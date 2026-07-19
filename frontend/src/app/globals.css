@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
 
 /* ─────────────────────────────────────────────────────────
    AEGIS DESIGN SYSTEM
@@ -32,6 +33,35 @@
    ───────────────────────────────────────────────────────── */
 
 @custom-variant dark (&:is(.dark *));
+
+/* SAP entity chip base — applied to EntityChip component (F04). Declared
+   via @utility rather than a plain @layer base class: Tailwind v4's engine
+   only lets @apply reference registered utilities, and .chip-error/
+   .chip-tcode/.chip-docnum below @apply this one (confirmed live — a plain
+   class here fails the production build with "Cannot apply unknown
+   utility class `chip-base`"). */
+@utility chip-base {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--font-geist-mono), "Consolas", monospace;
+  letter-spacing: 0.02em;
+  border: 1px solid;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Same reason as chip-base above: .chart-title @applies section-label and
+   .chart-card @applies surface-card, so both must be real utilities. */
+@utility section-label {
+  @apply text-xs font-semibold text-text-tertiary uppercase tracking-[0.08em];
+}
+@utility surface-card {
+  @apply bg-bg-card border border-border-primary rounded-xl shadow-sm;
+}
 
 @theme inline {
   /* ── shadcn's own tokens (kept, F01) ── */
@@ -536,6 +566,25 @@
     border-radius: 4px;
   }
 
+  /* ── Prose overrides for dark mode in admin review pane (F04) ──
+     Only meaningful once @tailwindcss/typography's .prose is in play
+     (ReviewPane.tsx, built in F13) — the plugin defines the --tw-prose-*
+     variables this block re-points at AEGIS's own color tokens. */
+  .dark .prose {
+    --tw-prose-body: rgb(var(--text-primary));
+    --tw-prose-headings: rgb(var(--text-primary));
+    --tw-prose-links: rgb(var(--aegis-accent));
+    --tw-prose-bold: rgb(var(--text-primary));
+    --tw-prose-counters: rgb(var(--text-secondary));
+    --tw-prose-bullets: rgb(var(--text-tertiary));
+    --tw-prose-hr: rgb(var(--border-primary));
+    --tw-prose-quotes: rgb(var(--text-secondary));
+    --tw-prose-code: rgb(var(--danger-text));
+    --tw-prose-pre-bg: rgb(var(--bg-sunken));
+    --tw-prose-th-borders: rgb(var(--border-secondary));
+    --tw-prose-td-borders: rgb(var(--border-primary));
+  }
+
   /* ── Text selection ── */
   ::selection {
     background: rgb(var(--aegis-accent-subtle));
@@ -626,6 +675,9 @@
   }
   .aura-amber {
     border-left: 3px solid rgb(var(--warning));
+  }
+  .aura-danger {
+    border-left: 3px solid rgb(var(--danger));
   }
   .aura-none {
     border-left: 3px solid rgb(var(--border-primary));
@@ -813,5 +865,151 @@
   100% {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   COMPONENT CLASSES (F04 — FRONTEND_03_TAILWIND_GLOBALS.md Part 1)
+   Reusable @apply-based class names components reach for instead
+   of repeating the same long utility strings inline.
+   ───────────────────────────────────────────────────────── */
+
+@layer components {
+  /* ── Card surfaces ── */
+  .surface-elevated {
+    @apply bg-bg-card border border-border-primary rounded-xl shadow-md;
+  }
+  .surface-sunken {
+    @apply bg-bg-sunken border border-border-primary rounded-lg;
+  }
+
+  /* ── SAP entity chip variants ── */
+  .chip-error {
+    @apply chip-base bg-danger-bg border-danger-border text-danger-text;
+  }
+  .chip-tcode {
+    @apply chip-base bg-info-bg border-info-border text-info-text;
+  }
+  .chip-docnum {
+    @apply chip-base bg-bg-tertiary border-border-primary text-text-secondary;
+  }
+
+  /* ── AI message prose content ──
+     Applied to the text container inside AIResponseBubble. Deliberately
+     separate from @tailwindcss/typography's .prose (Part 6) — chat
+     messages need a narrower, chat-bubble-specific set of overrides,
+     not the plugin's full article-style defaults. */
+  .aegis-prose {
+    @apply text-sm text-text-primary leading-relaxed;
+  }
+  .aegis-prose p {
+    @apply mb-2 last:mb-0;
+  }
+  .aegis-prose strong {
+    @apply font-semibold text-text-primary;
+  }
+  .aegis-prose ol {
+    @apply list-decimal pl-5 space-y-1.5 mb-2;
+  }
+  .aegis-prose ul {
+    @apply list-disc pl-5 space-y-1.5 mb-2;
+  }
+  .aegis-prose li {
+    @apply text-text-primary;
+  }
+  .aegis-prose code {
+    @apply font-mono text-xs bg-bg-tertiary border border-border-primary rounded px-1.5 py-0.5 text-text-primary;
+  }
+  .aegis-prose pre {
+    @apply bg-bg-sunken border border-border-primary rounded-lg p-3 overflow-x-auto mb-2;
+  }
+  .aegis-prose pre code {
+    @apply bg-transparent border-none p-0;
+  }
+  .aegis-prose h1,
+  .aegis-prose h2,
+  .aegis-prose h3 {
+    @apply font-semibold text-text-primary mb-2 mt-4 first:mt-0;
+  }
+  .aegis-prose h1 {
+    @apply text-lg;
+  }
+  .aegis-prose h2 {
+    @apply text-base;
+  }
+  .aegis-prose h3 {
+    @apply text-sm;
+  }
+
+  /* ── Admin navigation item ── */
+  .nav-item {
+    @apply relative flex items-center gap-2.5 px-4 py-2.5;
+    @apply text-sm text-text-secondary rounded-none;
+    @apply transition-colors duration-[var(--duration-normal)];
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-focus;
+  }
+  .nav-item:hover {
+    @apply text-text-primary bg-bg-secondary/50;
+  }
+  .nav-item.active {
+    @apply text-text-primary font-medium;
+  }
+  .nav-item.active::before {
+    content: "";
+    @apply absolute left-0 top-1/2 -translate-y-1/2;
+    @apply w-[3px] h-5 bg-accent rounded-r-full;
+  }
+
+  /* ── Employee topbar brand ── */
+  .topbar-brand {
+    @apply flex items-center gap-2.5 h-full;
+  }
+
+  /* ── Input group (label + input stacked) ── */
+  .input-group {
+    @apply flex flex-col gap-1.5 w-full;
+  }
+  .input-group label {
+    @apply text-sm font-medium text-text-secondary;
+  }
+
+  /* ── Metric value display ── */
+  .metric-value {
+    @apply text-4xl font-bold tabular-nums leading-none tracking-tight;
+  }
+  .metric-label {
+    @apply text-xs font-semibold text-text-tertiary uppercase tracking-wider;
+  }
+
+  /* ── Status badge (service health) ── */
+  .status-healthy {
+    @apply text-success bg-success-bg border-success-border;
+  }
+  .status-degraded {
+    @apply text-warning bg-warning-bg border-warning-border;
+  }
+  .status-unhealthy {
+    @apply text-danger bg-danger-bg border-danger-border;
+  }
+  .status-unknown {
+    @apply text-text-tertiary bg-bg-tertiary border-border-primary;
+  }
+
+  /* ── Admin chart card ── */
+  .chart-card {
+    @apply surface-card p-4 flex flex-col gap-3;
+  }
+  .chart-title {
+    @apply section-label;
+  }
+
+  /* ── Divider with label (used in audit timeline) ── */
+  .divider-label {
+    @apply flex items-center gap-3 text-xs text-text-tertiary font-medium;
+  }
+  .divider-label::before,
+  .divider-label::after {
+    content: "";
+    @apply flex-1 border-t border-border-primary;
   }
 }

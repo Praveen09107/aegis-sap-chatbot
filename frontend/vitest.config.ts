@@ -19,10 +19,11 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     globals: true,
     passWithNoTests: true,
-    // tests/e2e/** is Playwright's own test directory (real end-to-end specs
-    // using Playwright's test()/expect(), not Vitest's) — excluded here so
-    // Vitest's default *.spec.ts glob doesn't try to run them as unit tests.
-    exclude: ["node_modules/**", "tests/e2e/**", ".next/**"],
+    // tests/e2e/** and tests/ct/** are Playwright's own test directories
+    // (e2e specs and component-testing specs, both using Playwright's
+    // test()/expect(), not Vitest's) — excluded here so Vitest's default
+    // *.spec.ts glob doesn't try to run them as unit tests.
+    exclude: ["node_modules/**", "tests/e2e/**", "tests/ct/**", ".next/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
