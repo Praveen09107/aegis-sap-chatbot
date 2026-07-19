@@ -1,18 +1,43 @@
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+
+// AEGIS card surface variants (FRONTEND_04_DEPENDENCIES.md Step 6) — the
+// bg-card/ring-foreground shadcn defaults never got overridden when this
+// file was first generated (confirmed still stock as of F05). Layered
+// alongside the base structural classes rather than replacing them, since
+// this file's real "size" prop and CardAction slot (both added by a newer
+// shadcn CLI than the spec anticipated) are genuinely useful and unrelated
+// to color.
+const cardVariants = cva("", {
+  variants: {
+    variant: {
+      default: "bg-bg-card border border-border-primary shadow-sm",
+      elevated: "bg-bg-card border border-border-primary shadow-md",
+      ghost: "bg-transparent border border-transparent shadow-none",
+      sunken: "bg-bg-sunken border border-border-primary shadow-none",
+      accent: "bg-accent-subtle border border-border-focus shadow-sm",
+    },
+  },
+  defaultVariants: {
+    variant: "default",
+  },
+})
 
 function Card({
   className,
   size = "default",
+  variant,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & { size?: "default" | "sm" } & VariantProps<typeof cardVariants>) {
   return (
     <div
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl py-(--card-spacing) text-sm text-text-primary [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        cardVariants({ variant }),
         className
       )}
       {...props}
