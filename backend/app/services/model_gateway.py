@@ -294,8 +294,13 @@ async def walk_chain(
             continue
 
         attempted.append(tier["cb_name"])
+        # min_max_tokens (see config_inference_chains.py's docstring) is a
+        # per-tier floor, not a global widening — a smaller caller budget
+        # (e.g. CRAG_MAX_TOKENS=64) still applies to every tier that
+        # doesn't set this, only this specific tier gets bumped up.
+        tier_max_tokens = max(max_tokens, tier["min_max_tokens"]) if "min_max_tokens" in tier else max_tokens
         try:
-            result = await _dispatch_tier_nonstreaming(tier, prompt, max_tokens, temperature, image_b64, mime_type)
+            result = await _dispatch_tier_nonstreaming(tier, prompt, tier_max_tokens, temperature, image_b64, mime_type)
             cb.record_success()
             from app.observability import INFERENCE_TIER_USED
             INFERENCE_TIER_USED.labels(role=role, tier=str(tier_index + 1), provider=tier["provider"]).inc()

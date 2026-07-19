@@ -36,13 +36,21 @@ Every tier produced a correct, grounded answer (cited the exact T-codes given in
 | Tier | Provider | Model | Min | Avg | Max | Success | Format OK |
 |---|---|---|---|---|---|---|---|
 | 1 | Groq | `llama-3.1-8b-instant` | **0.19s** | **0.28s** | 0.38s | 3/3 | 3/3 |
-| 2 | Groq | `openai/gpt-oss-20b` | 0.43s | 0.53s | 0.63s | 3/3 | **0/3** |
+| 2 | Groq | `openai/gpt-oss-20b` | 0.43s | 0.53s | 0.63s | 3/3 | 0/3 → **3/3 after fix (DEC-061)** |
 | 3 | Cloudflare | `@cf/openai/gpt-oss-120b` | 1.48s | 1.69s | 1.93s | 3/3 | 3/3 |
 | 4 | SambaNova | `Meta-Llama-3.3-70B-Instruct` | 0.98s | 1.24s | 1.51s | 3/3 | 3/3 |
 
-**Real finding — judge fallback tier 2 (`openai/gpt-oss-20b`) returns genuinely empty content at the real production token budget.** All 3 reps returned `""` at `max_tokens=64` (this benchmark's judge role uses the same value as `CRAG_MAX_TOKENS` in `config.py`) — reproducible, re-confirmed with a dedicated follow-up test: `max_tokens=64 → ''`, `max_tokens=150 → 'SUFFICIENT'`, `max_tokens=300 → 'SUFFICIENT'`. `gpt-oss-20b` is a reasoning-style model that appears to spend its entire 64-token budget on internal reasoning before ever emitting the visible verdict.
+**Real finding — judge fallback tier 2 (`openai/gpt-oss-20b`) returned genuinely empty content at the real production token budget, RCA'd and fixed.**
 
-**This is not a crash and does not need an urgent fix** — traced through `retrieval_engine.py::_stage6_crag` (lines 564-592): an empty `model_response` hits neither the `INSUFFICIENT` nor `SUFFICIENT` substring checks, falls through the sentiment-keyword-counting branch (0 positive, 0 negative signals in an empty string), and lands on the existing `logger.warning(...)` + `return "SUFFICIENT", None` default — exactly the safe, already-designed "CRAG failure defaults to SUFFICIENT" behavior. **But it is a real, disclosed reliability characteristic worth knowing:** if judge tier 1 (`llama-3.1-8b-instant`) ever exhausts its daily quota and CRAG falls to tier 2, that call effectively contributes no real judgment — it silently defaults to SUFFICIENT every time, rather than genuinely evaluating sufficiency, until the chain either recovers tier 1 or falls further to tier 3. Not fixed in this pass — flagged for whoever next reviews judge-chain reliability. A larger `CRAG_MAX_TOKENS` would likely resolve it (150 tokens worked cleanly) but changing that budget is a deliberate architectural value (CLAUDE.md: "CRAG's token budget is never silently widened to JUDGE_MAX_TOKENS — they're intentionally different") and outside this benchmark's scope to alter unilaterally.
+*Symptom, confirmed reproducible:* all 3 original reps returned `""` at `max_tokens=64` (`CRAG_MAX_TOKENS`).
+
+*Root cause, confirmed with the raw API response, not inferred:* this model is a reasoning model whose Groq response carries a **separate `message.reasoning` field alongside `message.content`**, and `usage.completion_tokens_details.reasoning_tokens` is counted *against* `max_completion_tokens`. A graduated test across `max_tokens ∈ {16, 32, 48, 64, 96, 128}` showed `finish_reason: "length"` (truncated) and empty `content` at every value through 96 — `reasoning_tokens` climbing 14 → 30 → 46 → 62 → 94, i.e. consuming essentially the entire budget on hidden reasoning at every one of those values. At `max_tokens=128`, `finish_reason` flips to `"stop"` (natural completion) with `reasoning_tokens=112` and `content='SUFFICIENT'` — this specific CRAG prompt needs ~112–124 completion tokens total, almost all of it hidden reasoning, before the model ever writes its visible answer.
+
+*Checked for a cheaper fix first, confirmed there isn't one:* Groq's API accepts a `reasoning_effort` parameter for this model. `'low'` was tested at `max_tokens=64` — no change (still 62 reasoning tokens, still empty content). `'none'` is rejected outright for this specific model (`"reasoning_effort must be one of low, medium, or high"`, despite a different validation layer's error text implying `'none'` was a globally valid value) — there is no parameter-level way to suppress this model's reasoning below what already exceeds `CRAG_MAX_TOKENS=64`.
+
+*Fix applied (DEC-061):* a per-tier `"min_max_tokens": 128` override added to this tier's entry in `config_inference_chains.py`; `walk_chain()` in `model_gateway.py` now computes `max(caller_max_tokens, tier["min_max_tokens"])` per tier before dispatching, so `CRAG_MAX_TOKENS` stays 64 everywhere else in the chain (and for every other role's tiers) — this is a floor for one specific tier, not a global constant change. Re-verified live against the rebuilt `aegis-fastapi` image: 3/3 real reps now return `'SUFFICIENT'`, not empty. 3 new regression tests added (`tests/unit/test_model_gateway_walk_chain.py::TestWalkChainMinMaxTokensOverride`) proving the override bumps only the declaring tier, leaves every other tier's budget untouched, and never *lowers* an already-larger caller budget.
+
+This was chosen over swapping the model at this slot: `gpt-oss-20b` is Groq's own currently-recommended replacement for the deprecated `llama-3.1-8b-instant`, this is a fallback-only tier (only reached when tier 1 has already failed, so the extra ~2x token cost doesn't touch the hot path), and 128 is a directly-measured value, not a guess.
 
 ### Vision (5 tiers)
 
@@ -63,12 +71,32 @@ Cloudflare's second vision tier (`gemma-4-26b-a4b-it`) is meaningfully the slowe
 
 ---
 
+## Cerebras rate-limit evidence — precise scope (per-model, not account-wide)
+
+Raised directly during review: does "5 RPM" apply per model, or as one account-wide ceiling? Checked against the two real probe records, not assumed either way. `main/cerebras` (`gpt-oss-120b`) and `vision/cerebras` (`gemma-4-31b`) are two *different* models, called ~30 seconds apart in the same Step 0 probe sequence — well inside the same 60-second window. Both independently show `remaining-requests-minute: 4` (from a fresh limit of 5), `remaining-requests-hour: 149` (from 150), `remaining-requests-day: 2399` (from 2400) — each decremented by exactly 1 from its *own* ceiling. If this were one shared account-wide bucket, the second call would show `remaining: 3`, not `4`. It didn't, so **Cerebras enforces this limit independently per model**, not as one pool shared across every model on the account. This is consistent with (not contradicted by) `AEGIS_INFERENCE_MODEL_SELECTION.md:65`'s stated reason for not reusing `gpt-oss-120b` for the judge role too ("would consume from the *same* 5 RPM budget as main-answer generation") — that reasoning is about reusing the *identical* model across two roles, which per-model bucketing would indeed make share one bucket; using two *different* models, as this architecture actually does, does not.
+
+Also checked: `circuit_breaker.py`'s `_OVERRIDES` dict has **no Cerebras entry at all** (only `gemini_vision`, `sambanova_main`, `sambanova_judge`) — so there was no separate hardcoded Cerebras number in that specific file to audit. The "5 RPM" figure lives in prose (`DEC-019`, `AEGIS_INFERENCE_MODEL_SELECTION.md`), and this probe is its first live reconfirmation. The two providers that *do* have hardcoded overrides in `circuit_breaker.py` (Gemini, SambaNova) were both already independently re-verified above.
+
 ## Summary
 
 - **13 of 13 tier/role combinations are live and reachable** with the current real keys.
 - **Fastest per role:** Cerebras (main, 0.71s avg), Groq (judge, 0.28s avg), Cerebras (vision, 0.81s avg) — all three fastest paths are sub-second.
-- **One real reliability finding, safely degrading:** judge tier 2 (`gpt-oss-20b`) is effectively non-functional at the real `CRAG_MAX_TOKENS` budget (returns empty, defaults safely to SUFFICIENT rather than crashing).
+- **One real reliability finding, root-caused and fixed (DEC-061):** judge tier 2 (`gpt-oss-20b`) was returning empty content at the real `CRAG_MAX_TOKENS` budget because its hidden reasoning tokens alone exceeded that budget for this prompt shape. Fixed with a per-tier `min_max_tokens` floor (128, directly measured) — confirmed live, 3/3 real reps now return genuine `SUFFICIENT`/`INSUFFICIENT` verdicts. `OPEN-05`/this workstream is now closed without a caveat, not "closed but degrading."
 - **One real script bug, now fixed:** this benchmark's own vision format-checker under-reported Groq vision's real compliance; production's actual parser already handles the observed `<think>`-prefixed responses correctly.
-- **Rate-limit evidence is now honestly labeled per provider** — Cerebras and Gemini's ~5 RPM figures are now independently confirmed via live evidence (not just trusted docs/comments); SambaNova's real limit remains genuinely unconfirmed, and `OPEN-06` stays open on that basis rather than being closed on an assumption.
+- **Rate-limit evidence is now honestly labeled per provider, with exact scope** — Cerebras and Gemini's ~5 RPM figures are independently confirmed via live evidence and confirmed to apply per-model, not account-wide; SambaNova's real limit remains genuinely unconfirmed, and `OPEN-06` stays open on that basis rather than being closed on an assumption.
+
+## Real call count, fully accounted for
+
+67 real calls against live providers this session, none of them retries-on-failure (the script doesn't retry; every failed call is recorded as a failure and counted once):
+
+| Phase | Calls | What |
+|---|---|---|
+| Step 0 — rate-limit header probe | 13 | One real call per tier/role combination (`main`×4 + `judge`×4 + `vision`×5) |
+| Step 1 — timed benchmark run | 39 | 13 tiers × 3 repetitions, as planned |
+| Follow-up 1 — empty-content threshold | 3 | `openai/gpt-oss-20b` at `max_tokens` = 64 / 150 / 300 |
+| Follow-up 2 — graduated RCA | 6 | Same model at `max_tokens` = 16 / 32 / 48 / 64 / 96 / 128, capturing `reasoning_tokens`/`finish_reason` |
+| Follow-up 3 — `reasoning_effort` dead-end | 3 | `'low'` / `'minimal'` (rejected, 400) / unset, at `max_tokens=64` |
+| Follow-up 4 — `'none'` rejection confirmation | 3 | `reasoning_effort='none'` at `max_tokens` = 64 / 32 / 16, all rejected (400) |
+| **Total** | **67** | |
 
 Raw per-call data: `run_results.json`/`probe_results.json` (captured during this pass, not committed to the repo — regenerate by re-running `scripts/aegis_inference_benchmark.py` if needed).

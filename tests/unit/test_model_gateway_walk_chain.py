@@ -123,6 +123,69 @@ class TestWalkChainBudget:
         assert mock_dispatch.call_count < 4
 
 
+class TestWalkChainMinMaxTokensOverride:
+    """
+    Regression coverage for the judge-tier-2 (Groq openai/gpt-oss-20b) fix:
+    that model spends its whole token budget on hidden reasoning before
+    ever emitting SUFFICIENT/INSUFFICIENT, confirmed live to return empty
+    content at the real CRAG_MAX_TOKENS=64 — 128 reliably reaches a real
+    answer. config_inference_chains.py's judge tier 2 now declares
+    "min_max_tokens": 128; walk_chain must use max(caller_max_tokens,
+    tier's min_max_tokens) for that tier only, leaving every other tier
+    (including tier 1, on the same CRAG call) at the caller's real budget.
+    """
+
+    @pytest.mark.asyncio
+    async def test_tier_with_override_receives_bumped_max_tokens(self):
+        _reset_chain_circuits("judge")
+        call_results = [Exception("groq judge tier 1 down"), "SUFFICIENT"]
+
+        async def dispatch_side_effect(*args, **kwargs):
+            result = call_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with patch("app.services.model_gateway._check_tier_quota", new=AsyncMock(return_value=True)), \
+             patch("app.services.model_gateway._dispatch_tier_nonstreaming", new=AsyncMock(side_effect=dispatch_side_effect)) as mock_dispatch:
+            result = await walk_chain(role="judge", prompt="test", max_tokens=64, budget_seconds=20)
+
+        assert result == "SUFFICIENT"
+        assert mock_dispatch.call_count == 2
+        tier2_call = mock_dispatch.call_args_list[1]
+        assert tier2_call.args[2] == 128  # bumped from the caller's 64, not left at 64
+
+    @pytest.mark.asyncio
+    async def test_tier_without_override_keeps_callers_max_tokens(self):
+        _reset_chain_circuits("judge")
+        with patch("app.services.model_gateway._check_tier_quota", new=AsyncMock(return_value=True)), \
+             patch("app.services.model_gateway._dispatch_tier_nonstreaming", new=AsyncMock(return_value="SUFFICIENT")) as mock_dispatch:
+            result = await walk_chain(role="judge", prompt="test", max_tokens=64, budget_seconds=20)
+
+        assert result == "SUFFICIENT"
+        tier1_call = mock_dispatch.call_args_list[0]
+        assert tier1_call.args[2] == 64  # tier 1 has no override — caller's value passes through unchanged
+
+    @pytest.mark.asyncio
+    async def test_override_never_lowers_a_larger_caller_budget(self):
+        _reset_chain_circuits("judge")
+        call_results = [Exception("groq judge tier 1 down"), "SUFFICIENT"]
+
+        async def dispatch_side_effect(*args, **kwargs):
+            result = call_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with patch("app.services.model_gateway._check_tier_quota", new=AsyncMock(return_value=True)), \
+             patch("app.services.model_gateway._dispatch_tier_nonstreaming", new=AsyncMock(side_effect=dispatch_side_effect)) as mock_dispatch:
+            # JUDGE_MAX_TOKENS-sized call (300) — already bigger than the 128 floor.
+            await walk_chain(role="judge", prompt="test", max_tokens=300, budget_seconds=20)
+
+        tier2_call = mock_dispatch.call_args_list[1]
+        assert tier2_call.args[2] == 300  # max(300, 128) == 300 — override is a floor, not a ceiling
+
+
 class TestWalkChainVisionRole:
     @pytest.mark.asyncio
     async def test_vision_chain_passes_through_image_params(self):

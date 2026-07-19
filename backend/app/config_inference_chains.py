@@ -30,6 +30,21 @@ Each tier entry:
                    "sliding_window"  — atomic Redis ZSET, for providers with no headers
                                        (SambaNova: per-model; Gemini: per-project+model)
                    "neuron_pool"     — Cloudflare's shared account-wide daily cost pool
+  min_max_tokens — optional. If present, walk_chain() uses max(caller's
+                 max_tokens, this value) for this tier only, instead of the
+                 caller's value directly. For reasoning models whose visible
+                 answer is preceded by hidden reasoning tokens counted
+                 against the same budget (confirmed live 2026-07-19,
+                 benchmark investigation into DEC-060's judge-tier-2 empty-
+                 content finding — Groq's openai/gpt-oss-20b needs ~112
+                 reasoning tokens before it reaches SUFFICIENT/INSUFFICIENT,
+                 and reasoning_effort cannot be lowered below what already
+                 exceeds CRAG_MAX_TOKENS=64 for this model), the caller's
+                 budget can be genuinely too small for this specific tier
+                 even though it's correct for every other tier in the same
+                 chain. Does not change the caller's own constant (e.g.
+                 CRAG_MAX_TOKENS stays 64 everywhere else) — this is a
+                 per-tier floor, not a global widening.
 """
 from app.config import (
     GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_MAIN, GROQ_MODEL_JUDGE, GROQ_MODEL_JUDGE_CAPABILITY, GROQ_MODEL_VISION,
@@ -61,7 +76,8 @@ INFERENCE_CHAINS: dict[str, list[dict]] = {
         {"provider": "groq", "model": GROQ_MODEL_JUDGE, "base_url": GROQ_BASE_URL,
          "api_key": GROQ_API_KEY, "cb_name": "groq_judge", "wire_format": "openai", "quota_kind": "header_groq"},
         {"provider": "groq", "model": GROQ_MODEL_JUDGE_CAPABILITY, "base_url": GROQ_BASE_URL,
-         "api_key": GROQ_API_KEY, "cb_name": "groq_judge_capability", "wire_format": "openai", "quota_kind": "header_groq"},
+         "api_key": GROQ_API_KEY, "cb_name": "groq_judge_capability", "wire_format": "openai", "quota_kind": "header_groq",
+         "min_max_tokens": 128},
         {"provider": "cloudflare", "model": CLOUDFLARE_MODEL_JUDGE, "base_url": CLOUDFLARE_BASE_URL,
          "api_key": CLOUDFLARE_API_TOKEN, "cb_name": "cloudflare_judge", "wire_format": "cloudflare", "quota_kind": "neuron_pool"},
         {"provider": "sambanova", "model": SAMBANOVA_MODEL_JUDGE, "base_url": SAMBANOVA_BASE_URL,
