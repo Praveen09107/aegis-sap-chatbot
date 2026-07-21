@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CommandPalette } from "./CommandPalette"
+import { useUIStore } from "@/stores/uiStore"
 import type { Session } from "@/types"
 
 const pushMock = vi.fn()
@@ -94,5 +95,36 @@ describe("CommandPalette", () => {
 
     await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1))
     document.removeEventListener("aegis:open-shortcuts", listener)
+  })
+
+  describe("Restart walkthrough (FRONTEND_15 onboarding re-trigger)", () => {
+    beforeEach(() => {
+      localStorage.clear()
+      useUIStore.setState({ onboardingVisible: false })
+    })
+
+    it("shows the action for an employee (isAdmin false)", () => {
+      render(<CommandPalette open onOpenChange={vi.fn()} isAdmin={false} />)
+      expect(screen.getByText("Restart walkthrough")).toBeInTheDocument()
+    })
+
+    it("does not show the action for an IT admin", () => {
+      render(<CommandPalette open onOpenChange={vi.fn()} isAdmin />)
+      expect(screen.queryByText("Restart walkthrough")).not.toBeInTheDocument()
+    })
+
+    it("clears the onboarding-complete flag and reopens the modal when selected", async () => {
+      localStorage.setItem("aegis:onboarding-complete", "true")
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      render(<CommandPalette open onOpenChange={vi.fn()} isAdmin={false} />)
+
+      await user.click(screen.getByText("Restart walkthrough"))
+      vi.advanceTimersByTime(50) // runCommand's own close-then-act delay
+
+      expect(localStorage.getItem("aegis:onboarding-complete")).toBeNull()
+      expect(useUIStore.getState().onboardingVisible).toBe(true)
+      vi.useRealTimers()
+    })
   })
 })

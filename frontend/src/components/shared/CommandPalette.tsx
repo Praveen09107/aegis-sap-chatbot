@@ -21,13 +21,15 @@ import {
   Moon,
   Sun,
   Keyboard,
+  HelpCircle,
   X,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useDebounce } from "@/hooks/useDebounce"
 import { useCommandHistory } from "@/hooks/useCommandPalette"
+import { useUIStore } from "@/stores/uiStore"
 import { cn, truncate, formatRelativeDate } from "@/lib/utils"
-import { ADMIN_NAV_ITEMS, LIMITS } from "@/lib/constants"
+import { ADMIN_NAV_ITEMS, LIMITS, STORAGE_KEYS, FEATURES } from "@/lib/constants"
 import type { Session } from "@/types"
 
 // ── Command item types ───────────────────────────────────────
@@ -156,6 +158,24 @@ export function CommandPalette({ open, onOpenChange, sessions = [], isAdmin = fa
         document.dispatchEvent(new CustomEvent("aegis:open-shortcuts"))
       },
     },
+    // Onboarding re-trigger (FRONTEND_15) — employee-only, feature-flagged.
+    // Clears the completion flag and flips the same uiStore.onboardingVisible
+    // flag the employee layout's first-time check reads, so OnboardingModal
+    // (rendered once, at the layout level) reopens from step 1.
+    ...(!isAdmin && FEATURES.ONBOARDING
+      ? [
+          {
+            id: "action:restart-onboarding",
+            label: "Restart walkthrough",
+            sublabel: "Replay the AEGIS onboarding guide",
+            icon: <HelpCircle className="w-4 h-4" />,
+            action: () => {
+              localStorage.removeItem(STORAGE_KEYS.ONBOARDING_COMPLETE)
+              useUIStore.getState().setOnboardingVisible(true)
+            },
+          },
+        ]
+      : []),
   ]
 
   // ── Session search results ──────────────────────────────────

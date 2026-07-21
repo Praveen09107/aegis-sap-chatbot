@@ -57,6 +57,7 @@ export function useSessions(filters?: SessionFilters) {
       if (filters?.date_from) params.set("date_from", filters.date_from)
       if (filters?.date_to) params.set("date_to", filters.date_to)
       if (filters?.is_pinned !== undefined) params.set("is_pinned", String(filters.is_pinned))
+      if (filters?.is_unresolved !== undefined) params.set("is_unresolved", String(filters.is_unresolved))
 
       const query = params.toString()
       const response = await api.get<SessionListResponse>(`sessions${query ? `?${query}` : ""}`)

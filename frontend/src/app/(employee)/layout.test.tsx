@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, screen, waitFor, act } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import EmployeeLayout from "./layout"
 import { useUIStore } from "@/stores/uiStore"
 import { usePanelStore } from "@/stores/panelStore"
@@ -48,14 +49,23 @@ vi.mock("@/components/shared/CommandPalette", () => ({ CommandPalette: () => nul
 vi.mock("@/components/shared/KeyboardShortcutsOverlay", () => ({
   KeyboardShortcutsOverlay: () => null,
 }))
+vi.mock("@/components/onboarding/OnboardingModal", () => ({
+  OnboardingModal: ({ open, onComplete }: { open: boolean; onComplete: () => void }) =>
+    open ? (
+      <div data-testid="onboarding-modal">
+        <button onClick={onComplete}>complete onboarding</button>
+      </div>
+    ) : null,
+}))
 
 describe("EmployeeLayout", () => {
   beforeEach(() => {
     replaceMock.mockClear()
     initMultiTabDetectionMock.mockClear()
     useAuthMock.mockReturnValue({ isAuthenticated: true, isAdmin: false, initializing: false })
-    useUIStore.setState({ commandPaletteOpen: false })
+    useUIStore.setState({ commandPaletteOpen: false, onboardingVisible: false })
     usePanelStore.setState({ collapsed: false })
+    localStorage.clear()
   })
 
   it("shows only the loading screen while auth is initializing", () => {
@@ -121,5 +131,68 @@ describe("EmployeeLayout", () => {
     )
 
     expect(replaceMock).not.toHaveBeenCalled()
+  })
+
+  describe("first-time onboarding (FRONTEND_15)", () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it("shows the onboarding modal after an 800ms delay for a first-time employee", () => {
+      vi.useFakeTimers()
+      render(
+        <EmployeeLayout>
+          <div>chat content</div>
+        </EmployeeLayout>
+      )
+
+      expect(screen.queryByTestId("onboarding-modal")).not.toBeInTheDocument()
+      act(() => vi.advanceTimersByTime(800))
+      expect(screen.getByTestId("onboarding-modal")).toBeInTheDocument()
+    })
+
+    it("does not show onboarding when the completion flag is already set in localStorage", () => {
+      localStorage.setItem("aegis:onboarding-complete", "true")
+      vi.useFakeTimers()
+      render(
+        <EmployeeLayout>
+          <div>chat content</div>
+        </EmployeeLayout>
+      )
+
+      act(() => vi.advanceTimersByTime(800))
+      expect(screen.queryByTestId("onboarding-modal")).not.toBeInTheDocument()
+    })
+
+    it("does not show onboarding for an IT admin", () => {
+      useAuthMock.mockReturnValue({ isAuthenticated: true, isAdmin: true, initializing: false })
+      vi.useFakeTimers()
+      render(
+        <EmployeeLayout>
+          <div>chat content</div>
+        </EmployeeLayout>
+      )
+
+      act(() => vi.advanceTimersByTime(800))
+      expect(screen.queryByTestId("onboarding-modal")).not.toBeInTheDocument()
+    })
+
+    it("sets the completion flag and hides the modal when onboarding completes", async () => {
+      vi.useFakeTimers()
+      render(
+        <EmployeeLayout>
+          <div>chat content</div>
+        </EmployeeLayout>
+      )
+      act(() => vi.advanceTimersByTime(800))
+      expect(screen.getByTestId("onboarding-modal")).toBeInTheDocument()
+
+      vi.useRealTimers()
+      const user = userEvent.setup()
+      await user.click(screen.getByText("complete onboarding"))
+
+      expect(localStorage.getItem("aegis:onboarding-complete")).toBe("true")
+      expect(screen.queryByTestId("onboarding-modal")).not.toBeInTheDocument()
+    })
   })
 })

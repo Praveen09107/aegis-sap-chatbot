@@ -10,6 +10,12 @@ import {
   debounce,
   hasSAPEntities,
   sleep,
+  formatDateLocalized,
+  formatDateIST,
+  toLocalizedDateString,
+  toISTDateString,
+  startOfTodayLocalized,
+  startOfTodayIST,
 } from "./utils"
 
 describe("cn", () => {
@@ -201,6 +207,72 @@ describe("hasSAPEntities", () => {
 
   it("returns false for plain text with no SAP entities", () => {
     expect(hasSAPEntities("hello world, nothing to see here")).toBe(false)
+  })
+})
+
+describe("formatDateLocalized", () => {
+  it("formats a date string using the default (en-IN/Asia-Kolkata) deploy locale", () => {
+    // 2024-03-28T09:00:00Z is 14:30 IST (UTC+5:30)
+    expect(formatDateLocalized("2024-03-28T09:00:00Z")).toBe("28 Mar 2024, 02:30 pm")
+  })
+
+  it("formats a Date object the same way as an ISO string", () => {
+    expect(formatDateLocalized(new Date("2024-03-28T09:00:00Z"))).toBe("28 Mar 2024, 02:30 pm")
+  })
+
+  it("formatDateIST is a deprecated alias for formatDateLocalized, not a separate hardcoded implementation", () => {
+    expect(formatDateIST).toBe(formatDateLocalized)
+  })
+
+  it("honors NEXT_PUBLIC_DEPLOY_LOCALE/NEXT_PUBLIC_DEPLOY_TIMEZONE overrides for a non-Indian deployment", async () => {
+    vi.resetModules()
+    vi.stubEnv("NEXT_PUBLIC_DEPLOY_LOCALE", "en-US")
+    vi.stubEnv("NEXT_PUBLIC_DEPLOY_TIMEZONE", "America/New_York")
+    try {
+      const { formatDateLocalized: formatOverridden } = await import("./utils")
+      // 2024-03-28T09:00:00Z is 05:00 EDT (UTC-4) in New York
+      expect(formatOverridden("2024-03-28T09:00:00Z")).toBe("Mar 28, 2024, 05:00 AM")
+    } finally {
+      vi.unstubAllEnvs()
+      vi.resetModules()
+    }
+  })
+})
+
+describe("toLocalizedDateString", () => {
+  it("returns a YYYY-MM-DD string in the deploy timezone", () => {
+    // 2024-03-28T20:00:00Z is 2024-03-29 01:30 IST — crosses into the next day
+    expect(toLocalizedDateString(new Date("2024-03-28T20:00:00Z"))).toBe("2024-03-29")
+  })
+
+  it("toISTDateString is a deprecated alias for toLocalizedDateString", () => {
+    expect(toISTDateString).toBe(toLocalizedDateString)
+  })
+})
+
+describe("startOfTodayLocalized", () => {
+  it("returns a UTC Date whose deploy-timezone-local date matches today's deploy-timezone date", () => {
+    const result = startOfTodayLocalized()
+    const expectedLocalDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })
+    expect(result.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })).toBe(expectedLocalDate)
+  })
+
+  it("is exactly midnight in the deploy timezone (00:00:00 local)", () => {
+    const result = startOfTodayLocalized()
+    const localTimeParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(result)
+    const hour = localTimeParts.find((p) => p.type === "hour")?.value
+    const minute = localTimeParts.find((p) => p.type === "minute")?.value
+    expect(`${hour}:${minute}`).toBe("00:00")
+  })
+
+  it("startOfTodayIST is a deprecated alias for startOfTodayLocalized", () => {
+    expect(startOfTodayIST).toBe(startOfTodayLocalized)
   })
 })
 

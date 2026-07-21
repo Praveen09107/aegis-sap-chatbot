@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { LoadingScreen } from "@/components/shared/LoadingScreen"
 import { OfflineBanner } from "@/components/shared/OfflineBanner"
@@ -10,19 +10,22 @@ import { SessionSidebar } from "@/components/sessions/SessionSidebar"
 import { AttributionPanelShell } from "@/components/chat/AttributionPanelShell"
 import { CommandPalette } from "@/components/shared/CommandPalette"
 import { KeyboardShortcutsOverlay } from "@/components/shared/KeyboardShortcutsOverlay"
+import { OnboardingModal } from "@/components/onboarding/OnboardingModal"
 import { useAuth } from "@/hooks/useAuth"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useUIStore } from "@/stores/uiStore"
 import { usePanelStore } from "@/stores/panelStore"
 import { useSessions } from "@/hooks/queries"
 import { initMultiTabDetection } from "@/hooks/useWebSocket"
-import { LAYOUT } from "@/lib/constants"
+import { LAYOUT, STORAGE_KEYS, FEATURES } from "@/lib/constants"
 
 export default function EmployeeLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { isAuthenticated, isAdmin, initializing } = useAuth()
   const { commandPaletteOpen, toggleCommandPalette, closeCommandPalette } = useUIStore()
   const { collapsed } = usePanelStore()
+  const onboardingVisible = useUIStore((s) => s.onboardingVisible)
+  const setOnboardingVisible = useUIStore((s) => s.setOnboardingVisible)
 
   const { data: sessions = [] } = useSessions()
 
@@ -39,6 +42,24 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
     const { setMultiTabWarning } = useUIStore.getState()
     initMultiTabDetection(setMultiTabWarning)
   }, [])
+
+  // First-time onboarding (FRONTEND_15) — shown once per browser/device,
+  // gated by both the feature flag and a localStorage completion flag.
+  // Lives at the layout level (not the chat page) so the same
+  // uiStore.onboardingVisible flag CommandPalette's "Restart walkthrough"
+  // action toggles is the single source of truth in both places.
+  useEffect(() => {
+    if (!FEATURES.ONBOARDING || initializing || !isAuthenticated || isAdmin) return
+    const completed = localStorage.getItem(STORAGE_KEYS.ONBOARDING_COMPLETE)
+    if (completed) return
+    const timer = setTimeout(() => setOnboardingVisible(true), 800)
+    return () => clearTimeout(timer)
+  }, [initializing, isAuthenticated, isAdmin, setOnboardingVisible])
+
+  const handleOnboardingComplete = useCallback(() => {
+    localStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, "true")
+    setOnboardingVisible(false)
+  }, [setOnboardingVisible])
 
   useKeyboardShortcuts([
     {
@@ -83,6 +104,7 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
         isAdmin={false}
       />
       <KeyboardShortcutsOverlay />
+      <OnboardingModal open={onboardingVisible} onComplete={handleOnboardingComplete} />
     </div>
   )
 }

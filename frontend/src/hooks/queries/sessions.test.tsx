@@ -75,6 +75,18 @@ describe("useSessions", () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
   })
 
+  it("includes is_unresolved in the query params when set (used by the history page's Unresolved filter)", async () => {
+    apiGetMock.mockReset()
+    useSessionStore.setState({ sessions: [] })
+    apiGetMock.mockResolvedValue({ sessions: [], total: 0, page: 1 })
+    const { Wrapper } = createQueryWrapper()
+    renderHook(() => useSessions({ is_unresolved: true }), { wrapper: Wrapper })
+
+    await waitFor(() => expect(apiGetMock).toHaveBeenCalled())
+    const calledPath = apiGetMock.mock.calls[0][0] as string
+    expect(calledPath).toContain("is_unresolved=true")
+  })
+
   it("mirrors a successful fetch into sessionStore.sessions", async () => {
     apiGetMock.mockReset()
     useSessionStore.setState({ sessions: [] })
