@@ -10,23 +10,46 @@ interface DocumentsResponse {
   total: number
 }
 
-interface RegistryEntry {
+/**
+ * Confirmed (2026-07-21) against the real GET /admin/registry response:
+ * - Wrapped in {entries: [...]}, not a bare array (fixed in useAdminRegistry
+ *   below via `select`).
+ * - Real field is `pattern_string`, not `pattern_text`.
+ * - Real status enum is 'draft' | 'approved' | 'deprecated' (the DB's own
+ *   CHECK constraint on known_patterns_registry.status) — 'pending'/'active'
+ *   were this type's original, incorrect guesses for 'draft'/'approved'.
+ *   'rejected' is NOT a real value today (no reject endpoint or DB state
+ *   exists at all) — kept here as the disclosed, spec'd target value for
+ *   the Reject action built ahead of real backend support (see
+ *   useRejectRegistry in mutations.ts).
+ */
+export interface RegistryEntry {
   id: string
-  pattern_text: string
+  pattern_string: string
   linked_document_id: string
-  status: "pending" | "active" | "rejected"
+  status: "draft" | "approved" | "deprecated" | "rejected"
   created_at: string
   approved_by?: string
 }
 
-interface ConfigEntry {
-  category: string
-  key: string
-  value: string
-  last_verified_date: string
-  verified_by: string
-  is_stale: boolean
-  days_since_verified: number
+/**
+ * Confirmed (2026-07-21) against the real GET /admin/config-snapshot
+ * response: wrapped in {entries: [...]}, not a bare array (fixed in
+ * useConfigSnapshot below via `select`), and every field renamed to match
+ * the real backend names — this type originally guessed a shape that
+ * shared no field names with the live endpoint at all.
+ */
+export interface ConfigEntry {
+  config_category: string
+  config_key: string
+  config_value: string
+  last_updated_at: string
+  updated_by: string
+  /** Server-computed staleness level — authoritative; prefer this over
+   * client-side threshold recomputation to avoid drift from CONFIDENCE's
+   * own FRESHNESS_*_DAYS thresholds (see StalenessIndicator's `staleness` prop). */
+  staleness: "fresh" | "warning" | "critical"
+  age_days: number
 }
 
 interface GapEntry {
@@ -103,8 +126,10 @@ export function useAdminDocuments(filters?: DocFilters) {
 export function useAdminRegistry(status?: string) {
   return useQuery({
     queryKey: queryKeys.admin.registry(status),
-    queryFn: () => api.get<RegistryEntry[]>(`admin/registry${status ? `?status=${status}` : ""}`),
+    queryFn: () => api.get<{ entries: RegistryEntry[] }>(`admin/registry${status ? `?status=${status}` : ""}`),
     staleTime: 30_000,
+    // Real response is {entries: [...]}, not a bare array — confirmed 2026-07-21.
+    select: (data) => data.entries,
   })
 }
 
@@ -115,8 +140,10 @@ export function useAdminRegistry(status?: string) {
 export function useConfigSnapshot() {
   return useQuery({
     queryKey: queryKeys.admin.config(),
-    queryFn: () => api.get<ConfigEntry[]>("admin/config-snapshot"),
+    queryFn: () => api.get<{ entries: ConfigEntry[] }>("admin/config-snapshot"),
     staleTime: 60_000,
+    // Real response is {entries: [...]}, not a bare array — confirmed 2026-07-21.
+    select: (data) => data.entries,
   })
 }
 

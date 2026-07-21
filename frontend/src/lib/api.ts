@@ -35,6 +35,60 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
 
 interface UploadOptions {
   silent?: boolean
+  /**
+   * Called with 0–100 as the request body uploads. Fetch (used by every
+   * other method here) has no upload-progress API at all — when this is
+   * provided, upload() switches to XMLHttpRequest instead, which does.
+   */
+  onProgress?: (percent: number) => void
+}
+
+/**
+ * XHR-based upload, used only when the caller wants real progress events
+ * (fetch cannot report upload progress). Mirrors execute()'s error handling
+ * (toast on non-2xx, APIError thrown) so callers see identical behavior
+ * regardless of which transport actually ran.
+ */
+function uploadWithProgress<T>(url: string, formData: FormData, onProgress: (percent: number) => void, silent: boolean): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", url)
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100))
+      }
+    }
+
+    xhr.onload = () => {
+      let body: unknown = null
+      try {
+        body = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        body = xhr.responseText
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as T)
+        return
+      }
+
+      const detail =
+        typeof body === "object" && body !== null && "detail" in body
+          ? String((body as { detail: unknown }).detail)
+          : `Request failed with status ${xhr.status}`
+
+      if (!silent) toast.error(detail)
+      reject(new APIError(xhr.status, detail, body))
+    }
+
+    xhr.onerror = () => {
+      if (!silent) toast.error("Network error — check your connection and try again.")
+      reject(new APIError(0, "Network error"))
+    }
+
+    xhr.send(formData)
+  })
 }
 
 async function execute<T>(
@@ -163,6 +217,9 @@ export const api = {
    * multipart boundary automatically.
    */
   upload<T>(kind: "document" | "screenshot", formData: FormData, options?: UploadOptions): Promise<T> {
+    if (options?.onProgress) {
+      return uploadWithProgress<T>(`/api/upload/${kind}`, formData, options.onProgress, options.silent ?? false)
+    }
     return execute<T>(`/api/upload/${kind}`, {
       method: "POST",
       body: formData,

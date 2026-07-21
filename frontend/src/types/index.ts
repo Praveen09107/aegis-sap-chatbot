@@ -129,7 +129,14 @@ export interface DocumentRecord {
   status: "active" | "processing" | "failed" | "deprecated"
   chunk_count: number
   last_verified_date: string
-  verified_by: string
+  /**
+   * Confirmed (2026-07-21): GET /admin/documents's real SELECT does not
+   * include this column, even though it's a real NOT NULL column on
+   * documents_registry — optional here so the type doesn't claim a
+   * guarantee the live endpoint doesn't honor. UI must handle it being
+   * absent (e.g. a "—" fallback), not assume it's always present.
+   */
+  verified_by?: string
   ingested_at: string
 }
 

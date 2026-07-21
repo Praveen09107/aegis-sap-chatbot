@@ -69,13 +69,14 @@ describe("useAdminDocuments", () => {
 })
 
 describe("useAdminRegistry", () => {
-  it("fetches registry entries, optionally filtered by status", async () => {
+  it("fetches registry entries, optionally filtered by status, and unwraps the real {entries: [...]} envelope", async () => {
     apiGetMock.mockReset()
-    apiGetMock.mockResolvedValue([{ id: "r1", status: "pending" }])
-    const { result } = renderHook(() => useAdminRegistry("pending"), { wrapper: createWrapper() })
+    apiGetMock.mockResolvedValue({ entries: [{ id: "r1", status: "draft" }] })
+    const { result } = renderHook(() => useAdminRegistry("draft"), { wrapper: createWrapper() })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(apiGetMock).toHaveBeenCalledWith("admin/registry?status=pending")
+    expect(apiGetMock).toHaveBeenCalledWith("admin/registry?status=draft")
+    expect(result.current.data).toEqual([{ id: "r1", status: "draft" }])
   })
 
   it("surfaces a rejected request as an error state", async () => {
@@ -87,13 +88,14 @@ describe("useAdminRegistry", () => {
 })
 
 describe("useConfigSnapshot", () => {
-  it("fetches the config snapshot", async () => {
+  it("fetches the config snapshot and unwraps the real {entries: [...]} envelope", async () => {
     apiGetMock.mockReset()
-    apiGetMock.mockResolvedValue([{ category: "AR", key: "credit_days", value: "30" }])
+    apiGetMock.mockResolvedValue({ entries: [{ config_category: "AR", config_key: "credit_days", config_value: "30" }] })
     const { result } = renderHook(() => useConfigSnapshot(), { wrapper: createWrapper() })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(apiGetMock).toHaveBeenCalledWith("admin/config-snapshot")
+    expect(result.current.data).toEqual([{ config_category: "AR", config_key: "credit_days", config_value: "30" }])
   })
 
   it("surfaces a rejected request as an error state", async () => {

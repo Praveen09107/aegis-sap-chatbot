@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { DataTable, type ColumnDef } from "./DataTable"
+import { DataTable, type AegisColumnDef } from "./DataTable"
 
 interface Row {
   id: string
@@ -9,7 +9,7 @@ interface Row {
   score: number
 }
 
-const columns: ColumnDef<Row>[] = [
+const columns: AegisColumnDef<Row>[] = [
   { id: "name", header: "Name", cell: (r) => r.name, sortable: true },
   { id: "score", header: "Score", cell: (r) => r.score.toFixed(2) },
 ]

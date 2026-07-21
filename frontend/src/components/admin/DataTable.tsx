@@ -17,14 +17,23 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
 // ── Column definition ──────────────────────────────────────
+//
+// Named AegisColumnDef, not ColumnDef — @tanstack/react-table (a real
+// dependency of this project, per FRONTEND_MASTER_REFERENCE) exports its
+// own ColumnDef type, and this file's own consumers import both in some
+// admin pages; a same-named export would collide (SUPPLEMENT_05 Part 4).
 
-export interface ColumnDef<TRow> {
+export interface AegisColumnDef<TRow> {
   /** Unique identifier — used as sort key */
   id: string
   /** Column header label */
   header: string
   /** Cell renderer: receives the row and returns React content */
   cell: (row: TRow) => React.ReactNode
+  /** Plain-value accessor for CSV export — cell() returns a React node,
+   * which can't be serialized to CSV, so exports need this separate,
+   * string/number-producing accessor instead (SUPPLEMENT_05 Part 7). */
+  accessor?: (row: TRow) => string | number
   /** Whether this column is sortable. Default: false */
   sortable?: boolean
   /** Fixed width (e.g. '120px', '10%'). Omit for auto. */
@@ -55,7 +64,7 @@ export interface PaginationConfig {
 
 export interface DataTableProps<TRow extends { [K in IdField]: string }, IdField extends keyof TRow = keyof TRow> {
   data: TRow[]
-  columns: ColumnDef<TRow>[]
+  columns: AegisColumnDef<TRow>[]
   /** The field on TRow that uniquely identifies each row */
   keyField: IdField
 

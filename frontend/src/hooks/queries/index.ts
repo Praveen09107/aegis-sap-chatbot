@@ -20,6 +20,7 @@ export {
   useAdminReviewQueue,
   useAdminTickets,
 } from "./adminData"
+export type { RegistryEntry, ConfigEntry } from "./adminData"
 
 // Analytics
 export { useAdminAnalytics } from "./adminAnalytics"

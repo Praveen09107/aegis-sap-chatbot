@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, waitFor } from "@testing-library/react"
 import {
   useDeprecateDocument,
@@ -12,6 +12,7 @@ import {
   useSubmitFeedback,
 } from "./mutations"
 import { createQueryWrapper } from "@/test-utils/queryTestWrapper"
+import { useAdminStore } from "@/stores/adminStore"
 
 const {
   apiGetMock,
@@ -126,9 +127,9 @@ describe("useBulkDeprecateDocuments", () => {
 })
 
 describe("useApproveRegistry / useRejectRegistry", () => {
-  it("useApproveRegistry approves, toasts, and invalidates the registry", async () => {
-    apiPostMock.mockReset()
-    apiPostMock.mockResolvedValue(undefined)
+  it("useApproveRegistry PATCHes (the real backend route, not POST), toasts, and invalidates the registry", async () => {
+    apiPatchMock.mockReset()
+    apiPatchMock.mockResolvedValue(undefined)
     const { Wrapper, queryClient } = createQueryWrapper()
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
     const { result } = renderHook(() => useApproveRegistry(), { wrapper: Wrapper })
@@ -136,15 +137,15 @@ describe("useApproveRegistry / useRejectRegistry", () => {
     result.current.mutate("r1")
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(apiPostMock).toHaveBeenCalledWith("admin/registry/r1/approve")
+    expect(apiPatchMock).toHaveBeenCalledWith("admin/registry/r1/approve")
     expect(toastMock.registryApproved).toHaveBeenCalled()
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin", "registry", "all"] })
   })
 
   it("useApproveRegistry toasts an error on failure", async () => {
-    apiPostMock.mockReset()
+    apiPatchMock.mockReset()
     toastErrorMock.mockClear()
-    apiPostMock.mockRejectedValue(new Error("500"))
+    apiPatchMock.mockRejectedValue(new Error("500"))
     const { result } = renderHook(() => useApproveRegistry(), { wrapper: createWrapper() })
 
     result.current.mutate("r1")
@@ -170,7 +171,7 @@ describe("useApproveRegistry / useRejectRegistry", () => {
 })
 
 describe("useUpdateConfig", () => {
-  it("PUTs the value, toasts with the key, and invalidates config on success", async () => {
+  it("PUTs config_value (the real body key, not value), toasts with the key, and invalidates config on success", async () => {
     apiPutMock.mockReset()
     apiPutMock.mockResolvedValue(undefined)
     const { Wrapper, queryClient } = createQueryWrapper()
@@ -180,7 +181,7 @@ describe("useUpdateConfig", () => {
     result.current.mutate({ category: "AR", key: "credit_days", value: "30" })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(apiPutMock).toHaveBeenCalledWith("admin/config-snapshot/AR/credit_days", { value: "30" })
+    expect(apiPutMock).toHaveBeenCalledWith("admin/config-snapshot/AR/credit_days", { config_value: "30" })
     expect(toastMock.configSaved).toHaveBeenCalledWith("credit_days")
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin", "config"] })
   })
@@ -339,9 +340,13 @@ describe("useUpdateTicketStatus", () => {
 })
 
 describe("useUploadDocument", () => {
-  it("uploads via api.upload('document', formData) and invalidates documents on success", async () => {
+  beforeEach(() => {
+    useAdminStore.setState({ uploadProgress: {} })
+  })
+
+  it("uploads via api.upload('document', formData, {onProgress}) and invalidates documents on success", async () => {
     apiUploadMock.mockReset()
-    apiUploadMock.mockResolvedValue({ document_id: "d1" })
+    apiUploadMock.mockResolvedValue({ status: "complete", document_id: "d1", chunk_count: 12, message: "ok" })
     const { Wrapper, queryClient } = createQueryWrapper()
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
     const { result } = renderHook(() => useUploadDocument(), { wrapper: Wrapper })
@@ -350,15 +355,40 @@ describe("useUploadDocument", () => {
     result.current.mutate({ file, metadata: { module: "SD", content_type: "error_guide" } })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(apiUploadMock).toHaveBeenCalledWith("document", expect.any(FormData))
+    expect(apiUploadMock).toHaveBeenCalledWith("document", expect.any(FormData), { onProgress: expect.any(Function) })
     expect(toastMock.documentUploaded).toHaveBeenCalled()
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin", "documents", {}] })
   })
 
-  it("toasts a failure message on error", async () => {
+  it("reports real upload progress into adminStore.uploadProgress, and clears it once the request settles", async () => {
+    apiUploadMock.mockReset()
+    let resolveUpload!: (value: unknown) => void
+    const uploadPromise = new Promise((resolve) => {
+      resolveUpload = resolve
+    })
+    apiUploadMock.mockImplementation((_kind: string, _formData: FormData, options: { onProgress: (p: number) => void }) => {
+      options.onProgress(42)
+      return uploadPromise
+    })
+    const { result } = renderHook(() => useUploadDocument(), { wrapper: createWrapper() })
+
+    const file = new File(["x"], "guide.pdf", { type: "application/pdf" })
+    const mutatePromise = result.current.mutateAsync({ file, metadata: { module: "SD", content_type: "error_guide" } })
+
+    await waitFor(() => expect(useAdminStore.getState().uploadProgress["guide.pdf"]).toBe(42))
+
+    resolveUpload({ status: "complete", document_id: "d1", chunk_count: 12, message: "ok" })
+    await mutatePromise
+    expect(useAdminStore.getState().uploadProgress["guide.pdf"]).toBeUndefined()
+  })
+
+  it("clears upload progress even when the upload fails", async () => {
     apiUploadMock.mockReset()
     toastMock.documentsFailed.mockClear()
-    apiUploadMock.mockRejectedValue(new Error("413"))
+    apiUploadMock.mockImplementation(async (_kind: string, _formData: FormData, options: { onProgress: (p: number) => void }) => {
+      options.onProgress(50)
+      throw new Error("413")
+    })
     const { result } = renderHook(() => useUploadDocument(), { wrapper: createWrapper() })
 
     const file = new File(["x"], "guide.pdf")
@@ -366,6 +396,7 @@ describe("useUploadDocument", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(toastMock.documentsFailed).toHaveBeenCalled()
+    expect(useAdminStore.getState().uploadProgress["guide.pdf"]).toBeUndefined()
   })
 })
 

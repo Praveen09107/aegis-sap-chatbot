@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react"
-import { DataTable, type ColumnDef } from "@/components/admin/DataTable"
+import { DataTable, type AegisColumnDef } from "@/components/admin/DataTable"
 import { MetricCard, MetricCardGrid } from "@/components/admin/MetricCard"
 import { BulkActionBar } from "@/components/admin/BulkActionBar"
 import { EmptyState } from "@/components/admin/EmptyState"
@@ -21,7 +21,7 @@ interface Row {
   score: number
 }
 
-const columns: ColumnDef<Row>[] = [
+const columns: AegisColumnDef<Row>[] = [
   { id: "name", header: "Name", cell: (r) => r.name, sortable: true },
   { id: "score", header: "Score", cell: (r) => r.score.toFixed(2) },
 ]
