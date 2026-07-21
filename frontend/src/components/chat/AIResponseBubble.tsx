@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
+import { AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
 import { MarkdownMessage } from "./MarkdownMessage"
@@ -146,6 +147,27 @@ export function AIResponseBubble({
           {/* Streaming cursor — shown while actively streaming tokens */}
           {streamingState === "streaming" && <StreamingCursor />}
         </div>
+
+        {/* Incomplete-stream indicator (SUPPLEMENT_05 Part 2) — the
+            WebSocket dropped before validation_result arrived, so the
+            content above is whatever was accumulated up to that point. */}
+        {message.isIncomplete && (
+          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-primary">
+            <AlertTriangle className="w-3 h-3 text-warning shrink-0" aria-hidden="true" />
+            <span className="text-xs text-warning-text">
+              Response interrupted — the above may be incomplete.
+              {onRegenerate && (
+                <button
+                  type="button"
+                  className="ml-1.5 underline hover:no-underline transition-all"
+                  onClick={() => onRegenerate(message.id)}
+                >
+                  Retry
+                </button>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Metadata row — shown after completion */}

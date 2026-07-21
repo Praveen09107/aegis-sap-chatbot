@@ -18,12 +18,27 @@ interface ChatState {
   /**
    * Update the last assistant message with validation results.
    * Called when the backend sends validation_result via WebSocket.
+   *
+   * answerText, when provided, REPLACES the message's content — confirmed
+   * against the real backend (chat_handler.py): a targeted regeneration
+   * pass can produce a different final answer than whatever streamed via
+   * "token" messages, since regeneration bypasses the token Pub/Sub
+   * channel entirely. answer_text is the authoritative final text.
    */
   updateLastMessageValidation: (data: {
     validationScore: number
     confidenceBadge: ChatMessage["confidenceBadge"]
     attributionPanel: AttributionPanel | null
+    answerText?: string
+    relatedQuestions?: string[]
   }) => void
+
+  /**
+   * Mark the last assistant message as incomplete — the WebSocket dropped
+   * mid-stream, before validation_result arrived. Sets streamingState to
+   * 'error' so the compose bar re-activates for a retry.
+   */
+  markLastMessageIncomplete: () => void
 
   /** Clear all messages (when starting a new chat session) */
   clearMessages: () => void
@@ -104,7 +119,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return { messages }
     }),
 
-  updateLastMessageValidation: ({ validationScore, confidenceBadge, attributionPanel }) =>
+  updateLastMessageValidation: ({ validationScore, confidenceBadge, attributionPanel, answerText, relatedQuestions }) =>
     set((state) => {
       const messages = [...state.messages]
       const lastIdx = messages.length - 1
@@ -113,12 +128,27 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
       messages[lastIdx] = {
         ...last,
+        ...(answerText ? { content: answerText } : {}),
         validationScore,
         confidenceBadge,
         attributionPanel,
+        relatedQuestions,
         streamingState: "complete",
+        isIncomplete: false,
       }
       return { messages }
+    }),
+
+  markLastMessageIncomplete: () =>
+    set((state) => {
+      const messages = [...state.messages]
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "assistant") {
+          messages[i] = { ...messages[i], isIncomplete: true }
+          break
+        }
+      }
+      return { messages, streamingState: "error" }
     }),
 
   clearMessages: () => set({ messages: [] }),

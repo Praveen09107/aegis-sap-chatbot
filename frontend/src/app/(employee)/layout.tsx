@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { LoadingScreen } from "@/components/shared/LoadingScreen"
 import { OfflineBanner } from "@/components/shared/OfflineBanner"
+import { MultiTabWarningBanner } from "@/components/shared/MultiTabWarningBanner"
 import { EmployeeTopbar } from "@/components/shared/EmployeeTopbar"
 import { SessionSidebar } from "@/components/sessions/SessionSidebar"
 import { AttributionPanelShell } from "@/components/chat/AttributionPanelShell"
@@ -14,6 +15,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useUIStore } from "@/stores/uiStore"
 import { usePanelStore } from "@/stores/panelStore"
 import { useSessions } from "@/hooks/queries"
+import { initMultiTabDetection } from "@/hooks/useWebSocket"
 import { LAYOUT } from "@/lib/constants"
 
 export default function EmployeeLayout({ children }: { children: React.ReactNode }) {
@@ -31,6 +33,13 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
     }
   }, [isAuthenticated, isAdmin, initializing, router])
 
+  // Multi-tab coordination (SUPPLEMENT_05 Part 1) — each tab gets its own
+  // independent WebSocket session; this only powers the informational banner.
+  useEffect(() => {
+    const { setMultiTabWarning } = useUIStore.getState()
+    initMultiTabDetection(setMultiTabWarning)
+  }, [])
+
   useKeyboardShortcuts([
     {
       key: "k",
@@ -45,6 +54,7 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-bg-secondary">
       <OfflineBanner />
+      <MultiTabWarningBanner />
 
       <EmployeeTopbar />
 

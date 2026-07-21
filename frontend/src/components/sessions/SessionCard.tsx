@@ -9,6 +9,8 @@ interface SessionCardProps {
   session: Session
   isActive: boolean
   isPinned: boolean
+  /** True while a response is streaming in a different session — switching mid-stream would abandon it silently. */
+  isSelectDisabled?: boolean
   onSelect: () => void
 }
 
@@ -18,7 +20,10 @@ interface SessionCardProps {
  * Active session: white card with left accent border.
  * Hover: reveals pin indicator and context menu trigger.
  */
-export function SessionCard({ session, isActive, isPinned, onSelect }: SessionCardProps) {
+export function SessionCard({ session, isActive, isPinned, isSelectDisabled = false, onSelect }: SessionCardProps) {
+  const handleSelect = () => {
+    if (!isSelectDisabled) onSelect()
+  }
   const qualityColor =
     session.avg_confidence_score == null
       ? "bg-border-primary"
@@ -37,23 +42,31 @@ export function SessionCard({ session, isActive, isPinned, onSelect }: SessionCa
     <SessionContextMenu session={session} isPinned={isPinned}>
       <div
         role="listitem"
-        onClick={onSelect}
-        tabIndex={0}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? onSelect() : null)}
+        onClick={handleSelect}
+        tabIndex={isSelectDisabled ? -1 : 0}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " " ? handleSelect() : null)}
         className={cn(
-          "group relative mx-1.5 my-0.5 rounded-lg cursor-pointer",
+          "group relative mx-1.5 my-0.5 rounded-lg",
           "px-2.5 py-2",
           "transition-all duration-[var(--duration-normal)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
+          isSelectDisabled
+            ? "pointer-events-none opacity-60"
+            : "cursor-pointer",
           isActive
             ? [
                 "bg-bg-card border border-border-primary shadow-sm",
                 "border-l-2 border-l-accent",
               ]
-            : "hover:bg-bg-card hover:border hover:border-border-primary",
+            : !isSelectDisabled && "hover:bg-bg-card hover:border hover:border-border-primary",
         )}
         aria-current={isActive ? "page" : undefined}
-        aria-label={`Session: ${session.topic_summary}`}
+        aria-label={
+          isSelectDisabled
+            ? `Session: ${session.topic_summary} (unavailable until the current response completes)`
+            : `Session: ${session.topic_summary}`
+        }
+        title={isSelectDisabled ? "Wait for the current response to complete" : undefined}
       >
         {/* Pin indicator (shown when pinned) */}
         {isPinned && (

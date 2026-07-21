@@ -52,13 +52,35 @@ export interface WSMessage {
   type: WSMessageType
   session_id?: string
   token?: string
+  /**
+   * The authoritative final answer text, sent with validation_result.
+   * Confirmed via the real backend (chat_handler.py): a targeted
+   * regeneration pass can produce a DIFFERENT final answer than whatever
+   * was streamed via "token" messages moments earlier (regeneration calls
+   * the model directly and never publishes to the token Pub/Sub channel).
+   * A client must prefer this over its own accumulated streamed content.
+   */
+  answer_text?: string
   validation_score?: number
   confidence_badge?: ConfidenceBadge
   attribution_panel?: AttributionPanel
+  /** 2-3 follow-up question suggestions, sent with validation_result on green-badge answers. */
+  related_questions?: string[]
   message?: string
   error_code?: string
   ticket_id?: string
   diagnostic_summary?: string
+  /** vision_refined_answer only — whether the analyzed screenshot showed a recognizable SAP error code. */
+  has_error_code?: boolean
+  /** vision_refined_answer only — the SAP transaction code detected in the screenshot, if any. */
+  transaction_code?: string
+  /**
+   * retrieval_progress — declared per FRONTEND_MASTER_REFERENCE's protocol
+   * documentation, but confirmed (by reading the real backend) never
+   * actually sent by any current code path — kept for forward
+   * compatibility with the documented-but-unshipped backend addition, not
+   * something the current UI can rely on firing.
+   */
   stage?: "retrieving" | "crag" | "generating" | "validating"
 }
 
@@ -78,6 +100,10 @@ export interface ChatMessage {
     error_code?: string
   } | null
   entities?: SAPEntity[]
+  /** True if the WebSocket dropped mid-stream, before validation_result arrived. */
+  isIncomplete?: boolean
+  /** 2-3 follow-up question suggestions for this specific response, tied to the message so a later turn can't go stale. */
+  relatedQuestions?: string[]
 }
 
 // ── Session ──

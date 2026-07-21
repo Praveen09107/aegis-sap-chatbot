@@ -64,6 +64,24 @@ test.describe("SessionCard", () => {
     )
     await expect(component).toHaveScreenshot("session-card-states.png")
   })
+
+  // F09 addition — isSelectDisabled (SUPPLEMENT_05-adjacent: a session can't
+  // be switched to mid-stream, since that would silently abandon the
+  // in-flight response in the currently active session).
+  test("renders the select-disabled state", async ({ mount }) => {
+    const component = await mount(
+      <div style={{ padding: 16, background: "white", width: 220 }}>
+        <SessionCard
+          session={makeSession({ topic_summary: "Another session, unavailable mid-stream" })}
+          isActive={false}
+          isPinned={false}
+          isSelectDisabled
+          onSelect={() => {}}
+        />
+      </div>
+    )
+    await expect(component).toHaveScreenshot("session-card-select-disabled.png")
+  })
 })
 
 test.describe("SessionSidebar", () => {

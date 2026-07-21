@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { useState } from "react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ComposeBar } from "./ComposeBar"
 
@@ -16,6 +17,26 @@ function renderBar(overrides: Partial<React.ComponentProps<typeof ComposeBar>> =
     ...overrides,
   }
   return { ...render(<ComposeBar {...props} />), props }
+}
+
+// ComposeBar's value is a controlled prop — the entity preview is derived
+// from it, so exercising "type and see the preview appear" needs a real
+// stateful onChange, not the static vi.fn() renderBar's other tests use.
+function StatefulComposeBar(overrides: Partial<React.ComponentProps<typeof ComposeBar>> = {}) {
+  const [value, setValue] = useState(overrides.value ?? "")
+  return (
+    <ComposeBar
+      value={value}
+      onChange={setValue}
+      onSend={vi.fn()}
+      onAttachClick={vi.fn()}
+      onRemoveScreenshot={vi.fn()}
+      streamingState="idle"
+      pendingScreenshot={null}
+      screenshotPreviewUrl={null}
+      {...overrides}
+    />
+  )
 }
 
 describe("ComposeBar", () => {
@@ -81,5 +102,49 @@ describe("ComposeBar", () => {
     renderBar({ disabled: true })
     expect(screen.getByRole("button", { name: "Attach SAP screenshot" })).toBeDisabled()
     expect(screen.getByLabelText("Message input")).toBeDisabled()
+  })
+
+  describe("SAP entity preview", () => {
+    it("shows no preview for short or entity-free text", () => {
+      renderBar({ value: "hi" })
+      expect(screen.queryByLabelText("Detected SAP entities")).not.toBeInTheDocument()
+    })
+
+    it("shows detected entity chips after the debounce settles", async () => {
+      const user = userEvent.setup()
+      render(<StatefulComposeBar />)
+
+      await user.type(screen.getByLabelText("Message input"), "How do I fix VL150 in VL01N?")
+
+      await waitFor(
+        () => {
+          expect(screen.getByLabelText("Detected SAP entities")).toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+      expect(screen.getByText("VL150")).toBeInTheDocument()
+      expect(screen.getByText("VL01N")).toBeInTheDocument()
+    })
+
+    it("caps the preview at 4 chips", async () => {
+      const user = userEvent.setup()
+      render(<StatefulComposeBar />)
+
+      await user.type(
+        screen.getByLabelText("Message input"),
+        "VL150 F5201 MMBE VA01N 4500012345 more text"
+      )
+
+      await waitFor(
+        () => {
+          expect(screen.getByLabelText("Detected SAP entities")).toBeInTheDocument()
+        },
+        { timeout: 2000 }
+      )
+      const chipContainer = screen.getByLabelText("Detected SAP entities")
+      // "Detected:" label + up to 4 chips — never more than that, regardless
+      // of how many entities the message actually contains.
+      expect(chipContainer.children.length).toBeLessThanOrEqual(5)
+    })
   })
 })

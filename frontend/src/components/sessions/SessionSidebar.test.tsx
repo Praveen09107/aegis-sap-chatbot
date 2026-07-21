@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render as rtlRender, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { SessionSidebar } from "./SessionSidebar"
@@ -6,6 +6,12 @@ import { useSessionStore } from "@/stores/sessionStore"
 import { useChatStore } from "@/stores/chatStore"
 import { createQueryWrapper } from "@/test-utils/queryTestWrapper"
 import type { Session } from "@/types"
+
+const pushMock = vi.fn()
+const replaceMock = vi.fn()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+}))
 
 // SessionSidebar renders SessionCard -> SessionContextMenu, which now calls
 // the real useDeleteSession/useRenameSession/usePinSession mutation hooks —
@@ -34,6 +40,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 
 describe("SessionSidebar", () => {
   beforeEach(() => {
+    pushMock.mockClear()
+    replaceMock.mockClear()
     useSessionStore.setState({
       activeSessionId: null,
       searchQuery: "",
@@ -91,7 +99,7 @@ describe("SessionSidebar", () => {
     })
   })
 
-  it("new session button resets chat and clears the active session", async () => {
+  it("new session button resets chat, clears the active session, and clears the URL session param", async () => {
     useSessionStore.setState({ activeSessionId: "s1" })
     render(<SessionSidebar sessions={[makeSession()]} />)
 
@@ -99,6 +107,33 @@ describe("SessionSidebar", () => {
     await user.click(screen.getByLabelText("New chat session"))
 
     expect(useSessionStore.getState().activeSessionId).toBeNull()
+    expect(replaceMock).toHaveBeenCalledWith("/")
+  })
+
+  it("clicking a session card navigates to its URL (bookmarkable deep link)", async () => {
+    render(<SessionSidebar sessions={[makeSession({ id: "s1", topic_summary: "First topic" })]} />)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByText("First topic"))
+
+    expect(useSessionStore.getState().activeSessionId).toBe("s1")
+    expect(pushMock).toHaveBeenCalledWith("/?session=s1")
+  })
+
+  it("disables switching to a different session while one is actively streaming", async () => {
+    useSessionStore.setState({ activeSessionId: "s1" })
+    useChatStore.setState({ streamingState: "streaming" })
+    render(
+      <SessionSidebar
+        sessions={[makeSession({ id: "s1", topic_summary: "Active session" }), makeSession({ id: "s2", topic_summary: "Other session" })]}
+      />
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByText("Other session"))
+
+    expect(pushMock).not.toHaveBeenCalled()
+    expect(useSessionStore.getState().activeSessionId).toBe("s1")
   })
 
   it("sorts pinned sessions first regardless of date", () => {

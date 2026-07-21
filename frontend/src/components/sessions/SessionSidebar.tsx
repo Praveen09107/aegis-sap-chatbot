@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Plus, Search } from "lucide-react"
 import { cn, groupSessionsByDate } from "@/lib/utils"
 import { useDebounce } from "@/hooks/useDebounce"
@@ -24,12 +25,15 @@ interface SessionSidebarProps {
  * Layout: header (label + new button) → search input → grouped session list
  */
 export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarProps) {
+  const router = useRouter()
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const searchQuery = useSessionStore((s) => s.searchQuery)
   const pinnedIds = useSessionStore((s) => s.pinnedIds)
   const setSearchQuery = useSessionStore((s) => s.setSearchQuery)
   const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId)
   const resetForNewSession = useChatStore((s) => s.resetForNewSession)
+  const streamingState = useChatStore((s) => s.streamingState)
+  const isStreaming = !["idle", "complete", "error"].includes(streamingState)
 
   // Debounce client-side search filter
   const debouncedSearch = useDebounce(searchQuery, 200)
@@ -66,7 +70,22 @@ export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarPr
   const handleNewSession = useCallback(() => {
     resetForNewSession()
     setActiveSessionId(null)
-  }, [resetForNewSession, setActiveSessionId])
+    // router.replace (not push) — a URL history entry for "the moment I
+    // cleared the chat" isn't a meaningful back-navigation target, and
+    // without clearing the param at all, page.tsx's historical-session
+    // effect would immediately reload the OLD session on the next render.
+    router.replace("/")
+  }, [resetForNewSession, setActiveSessionId, router])
+
+  const handleSessionSelect = useCallback(
+    (sessionId: string) => {
+      setActiveSessionId(sessionId)
+      // Navigate via URL (not just store state) so the session is a real,
+      // bookmarkable deep link and page.tsx's ?session= loader picks it up.
+      router.push(`/?session=${sessionId}`)
+    },
+    [setActiveSessionId, router]
+  )
 
   return (
     <aside
@@ -150,7 +169,8 @@ export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarPr
                   session={session}
                   isActive={session.id === activeSessionId}
                   isPinned={pinnedIds.has(session.id)}
-                  onSelect={() => setActiveSessionId(session.id)}
+                  isSelectDisabled={isStreaming && session.id !== activeSessionId}
+                  onSelect={() => handleSessionSelect(session.id)}
                 />
               ))}
             </div>

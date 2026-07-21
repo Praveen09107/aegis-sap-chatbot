@@ -19,6 +19,11 @@ vi.mock("@/hooks/queries", () => ({
   useSessions: () => useSessionsMock(),
 }))
 
+const initMultiTabDetectionMock = vi.fn()
+vi.mock("@/hooks/useWebSocket", () => ({
+  initMultiTabDetection: (setter: (v: boolean) => void) => initMultiTabDetectionMock(setter),
+}))
+
 // The layout's own logic (loading gate, redirect, grid) is what's under
 // test here — its child components each have their own dedicated tests, so
 // they're mocked to keep this test isolated and fast, per Testing Library's
@@ -27,6 +32,9 @@ vi.mock("@/components/shared/LoadingScreen", () => ({
   LoadingScreen: () => <div data-testid="loading-screen" />,
 }))
 vi.mock("@/components/shared/OfflineBanner", () => ({ OfflineBanner: () => null }))
+vi.mock("@/components/shared/MultiTabWarningBanner", () => ({
+  MultiTabWarningBanner: () => <div data-testid="multi-tab-banner" />,
+}))
 vi.mock("@/components/shared/EmployeeTopbar", () => ({
   EmployeeTopbar: () => <div data-testid="topbar" />,
 }))
@@ -44,6 +52,7 @@ vi.mock("@/components/shared/KeyboardShortcutsOverlay", () => ({
 describe("EmployeeLayout", () => {
   beforeEach(() => {
     replaceMock.mockClear()
+    initMultiTabDetectionMock.mockClear()
     useAuthMock.mockReturnValue({ isAuthenticated: true, isAdmin: false, initializing: false })
     useUIStore.setState({ commandPaletteOpen: false })
     usePanelStore.setState({ collapsed: false })
@@ -72,7 +81,22 @@ describe("EmployeeLayout", () => {
     expect(screen.getByTestId("topbar")).toBeInTheDocument()
     expect(screen.getByTestId("sidebar")).toBeInTheDocument()
     expect(screen.getByTestId("attribution-shell")).toBeInTheDocument()
+    expect(screen.getByTestId("multi-tab-banner")).toBeInTheDocument()
     expect(screen.getByText("chat content")).toBeInTheDocument()
+  })
+
+  it("starts multi-tab detection once on mount, wired to uiStore's setMultiTabWarning", () => {
+    render(
+      <EmployeeLayout>
+        <div>chat content</div>
+      </EmployeeLayout>
+    )
+
+    expect(initMultiTabDetectionMock).toHaveBeenCalledTimes(1)
+    const setter = initMultiTabDetectionMock.mock.calls[0][0] as (v: boolean) => void
+
+    setter(true)
+    expect(useUIStore.getState().multiTabWarning).toBe(true)
   })
 
   it("redirects an authenticated it-admin to /admin/dashboard", async () => {

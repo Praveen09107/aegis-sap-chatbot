@@ -118,3 +118,33 @@ describe("AIResponseBubble — completed states", () => {
     expect(onFeedback).toHaveBeenCalledWith("m1", "positive")
   })
 })
+
+describe("AIResponseBubble — incomplete stream (SUPPLEMENT_05 Part 2)", () => {
+  it("shows no incomplete indicator for a normally-completed message", () => {
+    render(<AIResponseBubble message={{ ...baseMessage, confidenceBadge: "green" }} streamingState="complete" onFeedback={vi.fn()} />)
+    expect(screen.queryByText(/Response interrupted/)).not.toBeInTheDocument()
+  })
+
+  it("shows the interrupted notice and a Retry action when the message is marked incomplete", async () => {
+    const onRegenerate = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <AIResponseBubble
+        message={{ ...baseMessage, isIncomplete: true }}
+        streamingState="error"
+        onFeedback={vi.fn()}
+        onRegenerate={onRegenerate}
+      />
+    )
+
+    expect(screen.getByText(/Response interrupted/)).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Retry" }))
+    expect(onRegenerate).toHaveBeenCalledWith("m1")
+  })
+
+  it("shows the interrupted notice without a Retry button when onRegenerate isn't provided (error/edge path)", () => {
+    render(<AIResponseBubble message={{ ...baseMessage, isIncomplete: true }} streamingState="error" onFeedback={vi.fn()} />)
+    expect(screen.getByText(/Response interrupted/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument()
+  })
+})

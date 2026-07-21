@@ -1,9 +1,12 @@
 "use client"
 
-import { useRef, useEffect, useCallback } from "react"
+import { useRef, useEffect, useCallback, useMemo } from "react"
 import { Send, Paperclip } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ScreenshotThumbnail } from "./ScreenshotThumbnail"
+import { EntityChip } from "./EntityChip"
+import { useDebounce } from "@/hooks/useDebounce"
+import { detectSAPEntities } from "@/lib/sapEntityDetector"
 import type { StreamingState } from "@/types"
 import { LAYOUT } from "@/lib/constants"
 
@@ -47,6 +50,15 @@ export function ComposeBar({
 
   const isStreaming = !["idle", "complete", "error"].includes(streamingState)
   const canSend = value.trim().length > 0 && !isStreaming && !disabled
+
+  // Live SAP entity preview — non-intrusive, shown once the user pauses
+  // typing. Never blocks or modifies the input, just previews what AEGIS
+  // would recognize.
+  const debouncedValue = useDebounce(value, 400)
+  const detectedEntities = useMemo(
+    () => (debouncedValue.length > 2 ? detectSAPEntities(debouncedValue) : []),
+    [debouncedValue]
+  )
 
   // Auto-resize textarea
   useEffect(() => {
@@ -162,6 +174,20 @@ export function ComposeBar({
         Press <kbd className="bg-bg-tertiary border border-border-primary rounded px-1 py-0.5 text-[10px]">Enter</kbd> to send,{" "}
         <kbd className="bg-bg-tertiary border border-border-primary rounded px-1 py-0.5 text-[10px]">Shift + Enter</kbd> for new line
       </p>
+
+      {/* Detected SAP entity preview — non-intrusive, informational only */}
+      {detectedEntities.length > 0 && (
+        <div
+          className="flex items-center gap-2 px-11 pt-1 flex-wrap"
+          aria-live="polite"
+          aria-label="Detected SAP entities"
+        >
+          <span className="text-xs text-text-tertiary">Detected:</span>
+          {detectedEntities.slice(0, 4).map((entity, i) => (
+            <EntityChip key={i} type={entity.type} value={entity.value} showTooltip={false} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

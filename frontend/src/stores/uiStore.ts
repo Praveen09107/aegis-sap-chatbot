@@ -33,6 +33,11 @@ interface UIState {
   // ── Offline state ─────────────────────────────────────────
   isOffline: boolean
   setIsOffline: (offline: boolean) => void
+
+  // ── Multi-tab coordination ─────────────────────────────────
+  /** True when another browser tab also has the chat open — informational only, each tab's WebSocket session is independent. */
+  multiTabWarning: boolean
+  setMultiTabWarning: (warning: boolean) => void
 }
 
 /**
@@ -57,4 +62,7 @@ export const useUIStore = create<UIState>()((set) => ({
 
   isOffline: false,
   setIsOffline: (isOffline) => set({ isOffline }),
+
+  multiTabWarning: false,
+  setMultiTabWarning: (multiTabWarning) => set({ multiTabWarning }),
 }))

@@ -91,4 +91,41 @@ describe("SessionCard", () => {
     renderCard(<SessionCard session={makeSession()} isActive isPinned={false} onSelect={vi.fn()} />)
     expect(screen.getByRole("listitem")).toHaveAttribute("aria-current", "page")
   })
+
+  describe("isSelectDisabled", () => {
+    it("blocks onSelect on click and on Enter/Space when disabled", async () => {
+      const user = userEvent.setup()
+      const onSelect = vi.fn()
+      renderCard(
+        <SessionCard session={makeSession()} isActive={false} isPinned={false} isSelectDisabled onSelect={onSelect} />
+      )
+
+      const item = screen.getByRole("listitem")
+      await user.click(item)
+      expect(onSelect).not.toHaveBeenCalled()
+
+      item.focus()
+      await user.keyboard("{Enter}")
+      expect(onSelect).not.toHaveBeenCalled()
+    })
+
+    it("removes the item from tab order and labels why it's unavailable", () => {
+      renderCard(
+        <SessionCard session={makeSession()} isActive={false} isPinned={false} isSelectDisabled onSelect={vi.fn()} />
+      )
+
+      const item = screen.getByRole("listitem")
+      expect(item).toHaveAttribute("tabindex", "-1")
+      expect(item).toHaveAccessibleName(/unavailable until the current response completes/)
+    })
+
+    it("does not block selection when isSelectDisabled is false (default)", async () => {
+      const user = userEvent.setup()
+      const onSelect = vi.fn()
+      renderCard(<SessionCard session={makeSession()} isActive={false} isPinned={false} onSelect={onSelect} />)
+
+      await user.click(screen.getByRole("listitem"))
+      expect(onSelect).toHaveBeenCalledTimes(1)
+    })
+  })
 })

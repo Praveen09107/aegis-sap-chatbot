@@ -9,6 +9,7 @@ describe("uiStore", () => {
       onboardingVisible: false,
       initializing: true,
       isOffline: false,
+      multiTabWarning: false,
     })
   })
 
@@ -19,6 +20,7 @@ describe("uiStore", () => {
     expect(state.onboardingVisible).toBe(false)
     expect(state.initializing).toBe(true)
     expect(state.isOffline).toBe(false)
+    expect(state.multiTabWarning).toBe(false)
   })
 
   describe("command palette", () => {
@@ -77,5 +79,16 @@ describe("uiStore", () => {
   it("setIsOffline() sets an explicit value", () => {
     useUIStore.getState().setIsOffline(true)
     expect(useUIStore.getState().isOffline).toBe(true)
+  })
+
+  it("setMultiTabWarning() sets an explicit value, independent of other UI state", () => {
+    useUIStore.getState().openCommandPalette()
+    useUIStore.getState().setMultiTabWarning(true)
+
+    expect(useUIStore.getState().multiTabWarning).toBe(true)
+    expect(useUIStore.getState().commandPaletteOpen).toBe(true)
+
+    useUIStore.getState().setMultiTabWarning(false)
+    expect(useUIStore.getState().multiTabWarning).toBe(false)
   })
 })

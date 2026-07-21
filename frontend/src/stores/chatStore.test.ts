@@ -108,6 +108,65 @@ describe("chatStore", () => {
 
       expect(useChatStore.getState().messages).toBe(before)
     })
+
+    it("answerText, when provided, replaces the streamed content — the authoritative final text after regeneration", () => {
+      useChatStore.getState().addMessage(makeMessage({ id: "m1", role: "assistant", content: "streamed draft" }))
+      useChatStore.getState().updateLastMessageValidation({
+        validationScore: 0.91,
+        confidenceBadge: "green",
+        attributionPanel: null,
+        answerText: "regenerated final answer",
+      })
+
+      expect(useChatStore.getState().messages[0].content).toBe("regenerated final answer")
+    })
+
+    it("leaves the streamed content untouched when answerText is omitted", () => {
+      useChatStore.getState().addMessage(makeMessage({ id: "m1", role: "assistant", content: "streamed content" }))
+      useChatStore.getState().updateLastMessageValidation({
+        validationScore: 0.91,
+        confidenceBadge: "green",
+        attributionPanel: null,
+      })
+
+      expect(useChatStore.getState().messages[0].content).toBe("streamed content")
+    })
+
+    it("stores relatedQuestions on the message and clears any prior isIncomplete flag", () => {
+      useChatStore.getState().addMessage(makeMessage({ id: "m1", role: "assistant", isIncomplete: true }))
+      useChatStore.getState().updateLastMessageValidation({
+        validationScore: 0.91,
+        confidenceBadge: "green",
+        attributionPanel: null,
+        relatedQuestions: ["How do I check delivery status?"],
+      })
+
+      const last = useChatStore.getState().messages[0]
+      expect(last.relatedQuestions).toEqual(["How do I check delivery status?"])
+      expect(last.isIncomplete).toBe(false)
+    })
+  })
+
+  describe("markLastMessageIncomplete", () => {
+    it("marks the last assistant message incomplete and sets streamingState to error", () => {
+      useChatStore.getState().addMessage(makeMessage({ id: "u1", role: "user" }))
+      useChatStore.getState().addMessage(makeMessage({ id: "m1", role: "assistant", content: "partial" }))
+      useChatStore.setState({ streamingState: "streaming" })
+
+      useChatStore.getState().markLastMessageIncomplete()
+
+      const messages = useChatStore.getState().messages
+      expect(messages.find((m) => m.id === "m1")?.isIncomplete).toBe(true)
+      expect(messages.find((m) => m.id === "u1")?.isIncomplete).toBeUndefined()
+      expect(useChatStore.getState().streamingState).toBe("error")
+    })
+
+    it("is a no-op on messages (error/edge path) when there is no assistant message yet, but still sets streamingState", () => {
+      useChatStore.getState().addMessage(makeMessage({ id: "u1", role: "user" }))
+
+      expect(() => useChatStore.getState().markLastMessageIncomplete()).not.toThrow()
+      expect(useChatStore.getState().streamingState).toBe("error")
+    })
   })
 
   describe("streaming state / session id / websocket / compose value", () => {
