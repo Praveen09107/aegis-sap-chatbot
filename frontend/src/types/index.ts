@@ -133,6 +133,41 @@ export interface DocumentRecord {
   ingested_at: string
 }
 
+/**
+ * Knowledge gap event summary, as shown on the admin dashboard.
+ * NOTE: this is the shape FRONTEND_17_ADMIN_DASHBOARD.md specifies for
+ * GET /admin/metrics's gap_events field — confirmed (2026-07-21) that no
+ * such field exists on the real backend under this or any other name.
+ * The real, live /admin/knowledge-gaps endpoint returns a differently
+ * shaped {clusters: [...]} payload (entity_combination, gap_description,
+ * count_7d/count_30d, example_queries, gap_id, addressed_by_entry_id) —
+ * built for a future Knowledge Gaps admin page (not this session's scope).
+ * Kept here as the spec'd contract so the dashboard ships complete and
+ * lights up the moment a backend session adds a matching /admin/metrics
+ * endpoint; until then, useAdminMetrics() 404s and the dashboard shows its
+ * own loading/degraded state, never fake data.
+ */
+export interface GapEvent {
+  query_pattern: string
+  module: string
+  doc_category: string
+  count_this_week: number
+  severity: "high" | "medium" | "low"
+}
+
+/**
+ * Admin dashboard live metrics, from GET /admin/metrics.
+ * NOTE: confirmed (2026-07-21) this endpoint does not exist on the real
+ * backend yet — no route, no Pydantic model, nothing under any name. Same
+ * is true of GET /admin/system-health and GET /admin/review-queue/count
+ * (both already called by hooks in src/hooks/queries/adminMetrics.ts,
+ * built in F08 ahead of the backend). This type is the spec'd contract
+ * from FRONTEND_17_ADMIN_DASHBOARD.md, kept in full so the frontend is
+ * complete and production-grade the moment a backend session builds the
+ * matching endpoint — not an invented workaround, just built ahead of it,
+ * the same precedent already established for the screenshot-upload
+ * session-correlation gap disclosed in F09's useWebSocket.ts.
+ */
 export interface MetricsData {
   total_queries_today: number
   avg_validation_score: number
@@ -146,6 +181,11 @@ export interface MetricsData {
   mode_b_rate: number
   mode_c_rate: number
   last_updated_at: string
+  /** 7-day ValidationScore trend, most recent last. */
+  validation_score_7d: Array<{ date: string; score: number }>
+  /** 7-day confidence badge distribution, values are percentages (0-100) per day. */
+  confidence_dist_7d: Array<{ date: string; green: number; amber: number; none: number }>
+  gap_events: GapEvent[]
 }
 
 export interface ServiceHealth {

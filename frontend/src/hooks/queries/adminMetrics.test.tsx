@@ -28,6 +28,9 @@ const metrics: MetricsData = {
   mode_b_rate: 0.4,
   mode_c_rate: 0.1,
   last_updated_at: "2026-07-20T00:00:00Z",
+  validation_score_7d: [],
+  confidence_dist_7d: [],
+  gap_events: [],
 }
 
 const health: SystemHealthData = {
