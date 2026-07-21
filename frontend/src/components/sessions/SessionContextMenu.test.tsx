@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render as rtlRender, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { SessionContextMenu } from "./SessionContextMenu"
 import { useSessionStore } from "@/stores/sessionStore"
+import { createQueryWrapper } from "@/test-utils/queryTestWrapper"
 import type { Session } from "@/types"
 
 const { apiDeleteMock, apiPutMock, apiGetMock, exportSessionAsPDFMock, toastMock } = vi.hoisted(() => ({
@@ -54,6 +55,13 @@ async function openMenu() {
   trigger.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
   await waitFor(() => expect(screen.getByRole("menu")).toBeInTheDocument())
   return trigger
+}
+
+// SessionContextMenu now calls the real useDeleteSession/useRenameSession/
+// usePinSession mutation hooks, which need a QueryClientProvider ancestor.
+function render(ui: React.ReactElement) {
+  const { Wrapper } = createQueryWrapper()
+  return rtlRender(ui, { wrapper: Wrapper })
 }
 
 describe("SessionContextMenu", () => {

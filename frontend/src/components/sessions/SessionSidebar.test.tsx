@@ -1,10 +1,19 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render as rtlRender, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { SessionSidebar } from "./SessionSidebar"
 import { useSessionStore } from "@/stores/sessionStore"
 import { useChatStore } from "@/stores/chatStore"
+import { createQueryWrapper } from "@/test-utils/queryTestWrapper"
 import type { Session } from "@/types"
+
+// SessionSidebar renders SessionCard -> SessionContextMenu, which now calls
+// the real useDeleteSession/useRenameSession/usePinSession mutation hooks —
+// those need a QueryClientProvider ancestor.
+function render(ui: React.ReactElement) {
+  const { Wrapper } = createQueryWrapper()
+  return rtlRender(ui, { wrapper: Wrapper })
+}
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {

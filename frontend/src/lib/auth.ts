@@ -1,5 +1,11 @@
 "use client";
 
+import { useChatStore } from "@/stores/chatStore";
+import { useSessionStore } from "@/stores/sessionStore";
+import { usePanelStore } from "@/stores/panelStore";
+import { useUIStore } from "@/stores/uiStore";
+import { useAdminStore } from "@/stores/adminStore";
+
 export async function loginWithCredentials(username: string, password: string):
     Promise<{ success: boolean; error?: string }> {
   try {
@@ -26,6 +32,28 @@ export async function refreshAccessToken(): Promise<boolean> {
 }
 
 export async function logout() {
+  // Reset all stores. In-memory state would be wiped by the navigation
+  // below regardless, but the persisted stores (sessionStore's pinned/
+  // active session, panelStore's collapse preference) live in localStorage
+  // and would otherwise leak into the next user's session on a shared
+  // machine — this is the part that actually matters here.
+  useChatStore.getState().resetForNewSession();
+  useSessionStore.setState({
+    sessions: [],
+    activeSessionId: null,
+    searchQuery: "",
+    pinnedIds: new Set(),
+  });
+  usePanelStore.setState({ collapsed: false });
+  useUIStore.setState({ commandPaletteOpen: false });
+  useAdminStore.setState({
+    selectedDocumentIds: new Set(),
+    selectedTicketIds: new Set(),
+    selectedAuditIds: new Set(),
+    selectedRegistryIds: new Set(),
+    uploadProgress: {},
+  });
+
   await fetch("/api/auth/set-token", { method: "DELETE" });
   window.location.href = "/login";
 }

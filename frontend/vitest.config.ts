@@ -31,6 +31,7 @@ export default defineConfig({
         "node_modules/**",
         ".next/**",
         "src/components/ui/**", // shadcn-generated primitives, not hand-authored application code
+        "src/test-utils/**", // test infrastructure, not shipped application code
         "**/*.config.*",
         "**/*.d.ts",
       ],

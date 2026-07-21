@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { STORAGE_KEYS } from "@/lib/constants"
-import { usePanelStore, readInitialCollapsed } from "./panelStore"
+import { usePanelStore } from "./panelStore"
 
 // jsdom's localStorage is a WHATWG "legacy platform object" — attempting to
 // vi.spyOn its instance methods (getItem/setItem) is silently absorbed by
@@ -32,21 +32,27 @@ function withThrowingLocalStorage(methods: Partial<Storage>, run: () => void) {
 describe("panelStore", () => {
   beforeEach(() => {
     window.localStorage.clear()
-    usePanelStore.setState({ collapsed: false })
+    usePanelStore.setState({ collapsed: false, activeTab: "source" })
   })
 
-  it("starts expanded by default", () => {
+  it("starts expanded, on the 'source' tab, by default", () => {
     expect(usePanelStore.getState().collapsed).toBe(false)
+    expect(usePanelStore.getState().activeTab).toBe("source")
   })
 
   it("toggle() flips collapsed and persists it to localStorage", () => {
     usePanelStore.getState().toggle()
     expect(usePanelStore.getState().collapsed).toBe(true)
-    expect(window.localStorage.getItem(STORAGE_KEYS.PANEL_COLLAPSED)).toBe("true")
+
+    const raw = window.localStorage.getItem(STORAGE_KEYS.PANEL_COLLAPSED)
+    expect(raw).not.toBeNull()
+    expect(JSON.parse(raw!)).toMatchObject({ state: { collapsed: true } })
 
     usePanelStore.getState().toggle()
     expect(usePanelStore.getState().collapsed).toBe(false)
-    expect(window.localStorage.getItem(STORAGE_KEYS.PANEL_COLLAPSED)).toBe("false")
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.PANEL_COLLAPSED)!)).toMatchObject({
+      state: { collapsed: false },
+    })
   })
 
   it("setCollapsed() sets an explicit value", () => {
@@ -54,7 +60,18 @@ describe("panelStore", () => {
     expect(usePanelStore.getState().collapsed).toBe(true)
   })
 
-  it("still flips in-memory state when localStorage.setItem throws (e.g. private browsing quota)", () => {
+  it("setActiveTab() switches between 'source' and 'scores'", () => {
+    usePanelStore.getState().setActiveTab("scores")
+    expect(usePanelStore.getState().activeTab).toBe("scores")
+  })
+
+  it("still flips in-memory state (no throw) when localStorage.setItem throws (e.g. private browsing quota)", () => {
+    // zustand's persist middleware itself does NOT catch storage errors —
+    // its wrapped set() calls storage.setItem() synchronously right after
+    // updating in-memory state, and an uncaught throw there would propagate
+    // out of toggle() into whatever called it. safeLocalStorage.ts is what
+    // actually prevents that; this test is what would catch a regression if
+    // that safety wrapper were ever removed.
     withThrowingLocalStorage(
       {
         setItem: () => {
@@ -68,6 +85,19 @@ describe("panelStore", () => {
     )
   })
 
+  it("defaults to null (not a crash) when localStorage.getItem throws on rehydration", () => {
+    withThrowingLocalStorage(
+      {
+        getItem: () => {
+          throw new DOMException("SecurityError")
+        },
+      },
+      () => {
+        expect(() => usePanelStore.persist.rehydrate()).not.toThrow()
+      }
+    )
+  })
+
   it("resolves correctly when two toggles fire in the same tick (no lost update)", () => {
     // Each toggle() reads get().collapsed fresh rather than closing over a
     // stale value, so two toggles back-to-back must net out to the
@@ -76,23 +106,5 @@ describe("panelStore", () => {
     toggle()
     toggle()
     expect(usePanelStore.getState().collapsed).toBe(false)
-  })
-
-  it("readInitialCollapsed() defaults to false when localStorage.getItem throws", () => {
-    withThrowingLocalStorage(
-      {
-        getItem: () => {
-          throw new DOMException("SecurityError")
-        },
-      },
-      () => {
-        expect(readInitialCollapsed()).toBe(false)
-      }
-    )
-  })
-
-  it("readInitialCollapsed() reads a persisted 'true' value back correctly", () => {
-    window.localStorage.setItem(STORAGE_KEYS.PANEL_COLLAPSED, "true")
-    expect(readInitialCollapsed()).toBe(true)
   })
 })

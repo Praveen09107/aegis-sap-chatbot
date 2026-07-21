@@ -8,6 +8,9 @@ import {
   refreshAccessToken,
   logout,
 } from "./auth"
+import { useSessionStore } from "@/stores/sessionStore"
+import { usePanelStore } from "@/stores/panelStore"
+import { useAdminStore } from "@/stores/adminStore"
 
 function setCookie(value: string) {
   document.cookie = value
@@ -151,6 +154,34 @@ describe("logout", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/set-token", { method: "DELETE" })
     expect(window.location.href).toBe("/login")
+
+    Object.defineProperty(window, "location", { configurable: true, value: original })
+  })
+
+  it("clears persisted store state (pinned sessions, panel prefs, admin selections) so it can't leak into the next user's session", async () => {
+    // sessionStore and panelStore persist to localStorage — on a shared
+    // machine, a stale pinnedIds/activeSessionId left over from a previous
+    // user would otherwise show up for whoever logs in next.
+    useSessionStore.setState({
+      sessions: [{ id: "s1" } as never],
+      activeSessionId: "s1",
+      searchQuery: "vl150",
+      pinnedIds: new Set(["s1"]),
+    })
+    usePanelStore.setState({ collapsed: true })
+    useAdminStore.setState({ selectedDocumentIds: new Set(["d1"]) })
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }))
+    const original = window.location
+    Object.defineProperty(window, "location", { configurable: true, value: { ...original, href: "" } })
+
+    await logout()
+
+    expect(useSessionStore.getState().sessions).toEqual([])
+    expect(useSessionStore.getState().activeSessionId).toBeNull()
+    expect(useSessionStore.getState().pinnedIds.size).toBe(0)
+    expect(usePanelStore.getState().collapsed).toBe(false)
+    expect(useAdminStore.getState().selectedDocumentIds.size).toBe(0)
 
     Object.defineProperty(window, "location", { configurable: true, value: original })
   })

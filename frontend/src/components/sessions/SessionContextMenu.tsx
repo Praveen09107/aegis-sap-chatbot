@@ -11,6 +11,7 @@ import {
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog"
 import { Pin, PinOff, Pencil, Trash2, Download } from "lucide-react"
 import { useSessionStore } from "@/stores/sessionStore"
+import { useDeleteSession, useRenameSession, usePinSession } from "@/hooks/queries"
 import { exportSessionAsPDF } from "@/lib/sessionExport"
 import { TOAST } from "@/lib/toast"
 import { api } from "@/lib/api"
@@ -27,12 +28,17 @@ interface SessionContextMenuProps {
  * Built on Radix DropdownMenu — triggered by right-click on the session card.
  * Actions: pin/unpin, rename, delete, export PDF.
  *
- * Rename/delete call the API directly and rely on useSessions()'s own
- * refetch (mount / window focus) to reflect the change in the sidebar list —
- * this stub session doesn't yet have query-cache access to optimistically
- * patch the list in place. That's F08's job (queryClient.setQueryData, per
- * FRONTEND_11_TANSTACK_QUERY.md); pin/unpin is instant since it's tracked
- * locally in sessionStore, not the session list itself.
+ * Rename/delete go through the real TanStack Query mutation hooks
+ * (FRONTEND_11_TANSTACK_QUERY.md) — F07's version called the API directly
+ * with no cache invalidation; these mutations invalidate queryKeys.sessions
+ * on success, so the sidebar's useSessions() list refetches immediately
+ * instead of waiting on a passive refocus refetch.
+ *
+ * Pin/unpin has two layers, both real: sessionStore.togglePin is the
+ * instant, local, persisted UI source of truth the sidebar/card render
+ * from; usePinSession() additionally PUTs is_pinned to the server as a
+ * best-effort sync (e.g. for other clients), per Session.is_pinned already
+ * being a real server field. Neither layer is removed for the other.
  */
 export function SessionContextMenu({ session, isPinned, children }: SessionContextMenuProps) {
   const [open, setOpen] = useState(false)
@@ -40,20 +46,25 @@ export function SessionContextMenu({ session, isPinned, children }: SessionConte
   const [renameValue, setRenameValue] = useState(session.topic_summary)
 
   const togglePin = useSessionStore((s) => s.togglePin)
+  const deleteSession = useDeleteSession()
+  const renameSession = useRenameSession()
+  const pinSession = usePinSession()
 
   async function handleDelete() {
-    await api.delete(`sessions/${session.id}`)
+    await deleteSession.mutateAsync(session.id)
     TOAST.sessionDeleted()
   }
 
-  async function handleRename() {
+  function handleRename() {
     const trimmed = renameValue.trim()
     if (!trimmed || trimmed === session.topic_summary) {
       setRenaming(false)
       return
     }
-    await api.put(`sessions/${session.id}`, { topic_summary: trimmed })
-    TOAST.sessionRenamed()
+    renameSession.mutate(
+      { id: session.id, title: trimmed },
+      { onSuccess: () => TOAST.sessionRenamed() }
+    )
     setRenaming(false)
   }
 
@@ -94,6 +105,9 @@ export function SessionContextMenu({ session, isPinned, children }: SessionConte
             togglePin(session.id)
             if (isPinned) TOAST.sessionUnpinned()
             else TOAST.sessionPinned()
+            // Best-effort server sync — local sessionStore above is the
+            // real, instant source of truth for rendering either way.
+            pinSession.mutate({ id: session.id, pinned: !isPinned })
           }}
           className="flex items-center gap-2.5 text-sm cursor-pointer"
         >

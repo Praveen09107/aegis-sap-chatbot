@@ -1,40 +1,174 @@
 import { create } from "zustand"
-import type { ChatMessage } from "@/types"
-
-/**
- * chatStore — STUB version (FRONTEND_09_LAYOUT_COMPONENTS.md's
- * EmployeeTopbar/SessionSidebar/AttributionPanelShell need websocket,
- * messages, streamingState, and resetForNewSession at minimum). Full
- * implementation (send/receive/streaming reducers): FRONTEND_10_ZUSTAND_STORES.md
- * (session F08). Do NOT rename these exports.
- */
-export type StreamingState = "idle" | "streaming" | "error"
+import type { ChatMessage, StreamingState, AttributionPanel } from "@/types"
 
 interface ChatState {
-  websocket: WebSocket | null
+  // ── Message list ──────────────────────────────────────────
   messages: ChatMessage[]
+
+  /** Add a complete new message (user or AI) */
+  addMessage: (message: ChatMessage) => void
+
+  /**
+   * Append a streaming token to the last AI message.
+   * The last message must have role='assistant'.
+   * Creates the assistant message placeholder if it doesn't exist.
+   */
+  appendToken: (token: string) => void
+
+  /**
+   * Update the last assistant message with validation results.
+   * Called when the backend sends validation_result via WebSocket.
+   */
+  updateLastMessageValidation: (data: {
+    validationScore: number
+    confidenceBadge: ChatMessage["confidenceBadge"]
+    attributionPanel: AttributionPanel | null
+  }) => void
+
+  /** Clear all messages (when starting a new chat session) */
+  clearMessages: () => void
+
+  // ── Streaming state machine ──────────────────────────────
   streamingState: StreamingState
-  setWebsocket: (ws: WebSocket | null) => void
+  setStreamingState: (state: StreamingState) => void
+
+  // ── Current session ──────────────────────────────────────
+  currentSessionId: string | null
+  setCurrentSessionId: (id: string | null) => void
+
+  // ── WebSocket reference ──────────────────────────────────
+  /** The active WebSocket connection. Managed by useWebSocket hook in FRONTEND_12. */
+  websocket: WebSocket | null
+  setWebSocket: (ws: WebSocket | null) => void
+
+  // ── Screenshot state ─────────────────────────────────────
+  pendingScreenshot: File | null
+  setPendingScreenshot: (file: File | null) => void
+
+  screenshotPreviewUrl: string | null
+  setScreenshotPreviewUrl: (url: string | null) => void
+
+  /** Clear screenshot + revoke object URL to prevent memory leak */
+  clearScreenshot: () => void
+
+  // ── Compose bar ──────────────────────────────────────────
+  composeValue: string
+  setComposeValue: (value: string) => void
+
+  // ── Reset ────────────────────────────────────────────────
+  /** Reset entire chat state for a new session */
   resetForNewSession: () => void
 }
 
-export const useChatStore = create<ChatState>()((set) => ({
-  websocket: null,
-  messages: [],
-  streamingState: "idle",
+const INITIAL_STATE = {
+  messages: [] as ChatMessage[],
+  streamingState: "idle" as StreamingState,
+  currentSessionId: null as string | null,
+  websocket: null as WebSocket | null,
+  pendingScreenshot: null as File | null,
+  screenshotPreviewUrl: null as string | null,
+  composeValue: "",
+}
 
-  setWebsocket: (ws) => set({ websocket: ws }),
+export const useChatStore = create<ChatState>()((set, get) => ({
+  ...INITIAL_STATE,
 
-  resetForNewSession: () =>
-    set((s) => {
-      // A failed close() must not block resetting local state — the socket
-      // is being discarded either way, and a stuck stale reference here
-      // would leave the UI pointed at a dead connection.
-      try {
-        s.websocket?.close()
-      } catch {
-        // ignore — socket is being discarded regardless
+  // ── Message operations ──────────────────────────────────
+
+  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+
+  appendToken: (token) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const lastIdx = messages.length - 1
+      const last = messages[lastIdx]
+
+      if (!last || last.role !== "assistant") {
+        // Create placeholder assistant message
+        const placeholder: ChatMessage = {
+          id: `stream-${Date.now()}`,
+          role: "assistant",
+          content: token,
+          timestamp: new Date(),
+          streamingState: "streaming",
+          confidenceBadge: null,
+        }
+        return { messages: [...state.messages, placeholder] }
       }
-      return { websocket: null, messages: [], streamingState: "idle" }
+
+      // Append token to existing assistant message
+      messages[lastIdx] = {
+        ...last,
+        content: last.content + token,
+      }
+      return { messages }
     }),
+
+  updateLastMessageValidation: ({ validationScore, confidenceBadge, attributionPanel }) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const lastIdx = messages.length - 1
+      const last = messages[lastIdx]
+      if (!last || last.role !== "assistant") return state
+
+      messages[lastIdx] = {
+        ...last,
+        validationScore,
+        confidenceBadge,
+        attributionPanel,
+        streamingState: "complete",
+      }
+      return { messages }
+    }),
+
+  clearMessages: () => set({ messages: [] }),
+
+  // ── Streaming state ─────────────────────────────────────
+
+  setStreamingState: (streamingState) => set({ streamingState }),
+
+  // ── Session ─────────────────────────────────────────────
+
+  setCurrentSessionId: (currentSessionId) => set({ currentSessionId }),
+
+  // ── WebSocket ────────────────────────────────────────────
+
+  setWebSocket: (websocket) => set({ websocket }),
+
+  // ── Screenshot ──────────────────────────────────────────
+
+  setPendingScreenshot: (pendingScreenshot) => set({ pendingScreenshot }),
+
+  setScreenshotPreviewUrl: (screenshotPreviewUrl) => set({ screenshotPreviewUrl }),
+
+  clearScreenshot: () => {
+    const { screenshotPreviewUrl } = get()
+    if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl)
+    set({ pendingScreenshot: null, screenshotPreviewUrl: null })
+  },
+
+  // ── Compose bar ──────────────────────────────────────────
+
+  setComposeValue: (composeValue) => set({ composeValue }),
+
+  // ── Reset ────────────────────────────────────────────────
+
+  resetForNewSession: () => {
+    const { screenshotPreviewUrl, websocket } = get()
+    // Revoke screenshot URL
+    if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl)
+    // Close WebSocket if open — a failed close() must not block the reset
+    // (same reasoning as F07's stub: the socket is being discarded either way)
+    try {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.close(1000, "New session")
+      }
+    } catch {
+      // ignore — socket is being discarded regardless
+    }
+    set({
+      ...INITIAL_STATE,
+      websocket: null,
+    })
+  },
 }))

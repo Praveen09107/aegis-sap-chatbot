@@ -1,40 +1,41 @@
 import { create } from "zustand"
+import { persist, createJSONStorage } from "zustand/middleware"
 import { STORAGE_KEYS } from "@/lib/constants"
+import { createSafeLocalStorage } from "./safeLocalStorage"
 
-/**
- * panelStore — STUB version (FRONTEND_09_LAYOUT_COMPONENTS.md's
- * AttributionPanelShell needs collapsed/toggle at minimum). Full
- * implementation (active panel tab): FRONTEND_10_ZUSTAND_STORES.md
- * (session F08). Do NOT rename these exports.
- */
 interface PanelState {
+  // ── Source attribution panel (right panel in employee chat) ──
   collapsed: boolean
   toggle: () => void
   setCollapsed: (collapsed: boolean) => void
+
+  // ── Active panel tab ─────────────────────────────────────
+  /** 'source' = document reference | 'scores' = breakdown bars */
+  activeTab: "source" | "scores"
+  setActiveTab: (tab: "source" | "scores") => void
 }
 
-// Exported only so its SSR guard and localStorage-failure catch branch —
-// both only exercised once, at module load, on the real store — can be
-// unit tested directly instead of relying on fragile module-cache-busting.
-export function readInitialCollapsed(): boolean {
-  if (typeof window === "undefined") return false
-  try {
-    return window.localStorage.getItem(STORAGE_KEYS.PANEL_COLLAPSED) === "true"
-  } catch {
-    return false
-  }
-}
+/**
+ * Panel collapse state is persisted to localStorage.
+ * Users' preference is remembered across sessions.
+ */
+export const usePanelStore = create<PanelState>()(
+  persist(
+    (set) => ({
+      collapsed: false,
+      activeTab: "source",
 
-export const usePanelStore = create<PanelState>()((set, get) => ({
-  collapsed: readInitialCollapsed(),
-  toggle: () => {
-    const next = !get().collapsed
-    set({ collapsed: next })
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.PANEL_COLLAPSED, String(next))
-    } catch {
-      // localStorage unavailable — collapse state just won't persist
+      toggle: () => set((state) => ({ collapsed: !state.collapsed })),
+      setCollapsed: (collapsed) => set({ collapsed }),
+      setActiveTab: (activeTab) => set({ activeTab }),
+    }),
+    {
+      name: STORAGE_KEYS.PANEL_COLLAPSED,
+      storage: createJSONStorage(createSafeLocalStorage),
+      partialize: (state) => ({
+        collapsed: state.collapsed,
+        activeTab: state.activeTab,
+      }),
     }
-  },
-  setCollapsed: (collapsed) => set({ collapsed }),
-}))
+  )
+)
