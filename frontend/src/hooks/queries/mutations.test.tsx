@@ -37,6 +37,7 @@ const {
     configSaveFailed: vi.fn(),
     correctionSubmitted: vi.fn(),
     correctionSkipped: vi.fn(),
+    ticketMoved: vi.fn(),
     networkError: vi.fn(),
     documentUploaded: vi.fn(),
     documentsFailed: vi.fn(),
@@ -226,32 +227,22 @@ describe("useUpdateConfig", () => {
 })
 
 describe("useResolveReview", () => {
-  it("approve_correction: toasts, invalidates the review queue and metrics", async () => {
+  it("posts admin_correct_answer, toasts, invalidates the review queue and metrics", async () => {
     apiPostMock.mockReset()
     apiPostMock.mockResolvedValue(undefined)
     const { Wrapper, queryClient } = createQueryWrapper()
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
     const { result } = renderHook(() => useResolveReview(), { wrapper: Wrapper })
 
-    result.current.mutate({ item_id: "rq1", action: "approve_correction" })
+    result.current.mutate({ item_id: "rq1", admin_correct_answer: "The correct procedure is..." })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(apiPostMock).toHaveBeenCalledWith("admin/review-queue/rq1/resolve", {
+      admin_correct_answer: "The correct procedure is...",
+    })
     expect(toastMock.correctionSubmitted).toHaveBeenCalled()
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin", "review", "pending"] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admin", "metrics"] })
-  })
-
-  it("skip: shows the skipped toast instead of the submitted one", async () => {
-    apiPostMock.mockReset()
-    toastMock.correctionSubmitted.mockClear()
-    apiPostMock.mockResolvedValue(undefined)
-    const { result } = renderHook(() => useResolveReview(), { wrapper: createWrapper() })
-
-    result.current.mutate({ item_id: "rq1", action: "skip" })
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(toastMock.correctionSkipped).toHaveBeenCalled()
-    expect(toastMock.correctionSubmitted).not.toHaveBeenCalled()
   })
 
   it("toasts an error on failure", async () => {
@@ -260,7 +251,7 @@ describe("useResolveReview", () => {
     apiPostMock.mockRejectedValue(new Error("500"))
     const { result } = renderHook(() => useResolveReview(), { wrapper: createWrapper() })
 
-    result.current.mutate({ item_id: "rq1", action: "skip" })
+    result.current.mutate({ item_id: "rq1", admin_correct_answer: "fix" })
 
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(toastErrorMock).toHaveBeenCalledWith("Failed to submit review")
@@ -268,10 +259,10 @@ describe("useResolveReview", () => {
 })
 
 describe("useUpdateTicketStatus", () => {
-  it("optimistically updates the ticket in the cache before the request resolves", async () => {
+  it("optimistically updates the ticket in the cached {tickets: [...]} envelope before the request resolves", async () => {
     apiPatchMock.mockReset()
     const { Wrapper, queryClient } = createQueryWrapper()
-    queryClient.setQueryData(["admin", "tickets", "all"], [{ id: "t1", status: "open" }])
+    queryClient.setQueryData(["admin", "tickets", "all"], { tickets: [{ ticket_id: "t1", status: "open" }] })
 
     let resolvePatch!: (value: unknown) => void
     apiPatchMock.mockImplementationOnce(
@@ -282,7 +273,9 @@ describe("useUpdateTicketStatus", () => {
     result.current.mutate({ ticketId: "t1", status: "in_progress" })
 
     await waitFor(() =>
-      expect(queryClient.getQueryData(["admin", "tickets", "all"])).toEqual([{ id: "t1", status: "in_progress" }])
+      expect(queryClient.getQueryData(["admin", "tickets", "all"])).toEqual({
+        tickets: [{ ticket_id: "t1", status: "in_progress" }],
+      })
     )
 
     resolvePatch(undefined)
@@ -293,14 +286,14 @@ describe("useUpdateTicketStatus", () => {
     apiPatchMock.mockReset()
     toastMock.networkError.mockClear()
     const { Wrapper, queryClient } = createQueryWrapper()
-    queryClient.setQueryData(["admin", "tickets", "all"], [{ id: "t1", status: "open" }])
+    queryClient.setQueryData(["admin", "tickets", "all"], { tickets: [{ ticket_id: "t1", status: "open" }] })
     apiPatchMock.mockRejectedValue(new Error("500"))
 
     const { result } = renderHook(() => useUpdateTicketStatus(), { wrapper: Wrapper })
     result.current.mutate({ ticketId: "t1", status: "in_progress" })
 
     await waitFor(() => expect(result.current.isError).toBe(true))
-    expect(queryClient.getQueryData(["admin", "tickets", "all"])).toEqual([{ id: "t1", status: "open" }])
+    expect(queryClient.getQueryData(["admin", "tickets", "all"])).toEqual({ tickets: [{ ticket_id: "t1", status: "open" }] })
     expect(toastMock.networkError).toHaveBeenCalled()
   })
 
@@ -309,10 +302,12 @@ describe("useUpdateTicketStatus", () => {
     const { Wrapper, queryClient } = createQueryWrapper()
     queryClient.setQueryData(
       ["admin", "tickets", "all"],
-      [
-        { id: "t1", status: "open" },
-        { id: "t2", status: "open" },
-      ]
+      {
+        tickets: [
+          { ticket_id: "t1", status: "open" },
+          { ticket_id: "t2", status: "open" },
+        ],
+      }
     )
 
     let resolveSecond!: (value: unknown) => void
@@ -327,10 +322,12 @@ describe("useUpdateTicketStatus", () => {
 
     // Both optimistic updates apply immediately, independent of network timing.
     await waitFor(() =>
-      expect(queryClient.getQueryData(["admin", "tickets", "all"])).toEqual([
-        { id: "t1", status: "resolved" },
-        { id: "t2", status: "in_progress" },
-      ])
+      expect(queryClient.getQueryData(["admin", "tickets", "all"])).toEqual({
+        tickets: [
+          { ticket_id: "t1", status: "resolved" },
+          { ticket_id: "t2", status: "in_progress" },
+        ],
+      })
     )
 
     resolveSecond(undefined)

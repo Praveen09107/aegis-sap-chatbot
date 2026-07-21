@@ -135,23 +135,29 @@ export function useUpdateConfig() {
 
 interface ReviewResolutionPayload {
   item_id: string
-  action: "approve_correction" | "reject_correction" | "skip"
-  correction_text?: string
-  reviewer_note?: string
+  admin_correct_answer: string
 }
 
 /**
  * Resolve a review queue item.
- * Called from the review split-pane with keyboard shortcuts (A=approve, X=skip).
+ * Called from the review split-pane with keyboard shortcuts (A=approve).
+ *
+ * NOTE: confirmed (2026-07-22) against the real POST
+ * /admin/review-queue/{item_id}/resolve (admin_handler.py:205-218): the
+ * body only accepts `admin_correct_answer` (required, non-empty — the
+ * handler 400s otherwise) and always sets status='resolved' server-side.
+ * There is no action/skip/reject field or write path at all — FRONTEND_21's
+ * "Skip" is therefore handled entirely client-side (see review-queue's
+ * page.tsx), never through this mutation.
  */
 export function useResolveReview() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (payload: ReviewResolutionPayload) => api.post(`admin/review-queue/${payload.item_id}/resolve`, payload),
-    onSuccess: (_data, { action }) => {
-      if (action === "approve_correction") TOAST.correctionSubmitted()
-      if (action === "skip") TOAST.correctionSkipped()
+    mutationFn: (payload: ReviewResolutionPayload) =>
+      api.post(`admin/review-queue/${payload.item_id}/resolve`, { admin_correct_answer: payload.admin_correct_answer }),
+    onSuccess: () => {
+      TOAST.correctionSubmitted()
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.reviewQueue("pending") })
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.metrics() })
     },
@@ -162,7 +168,7 @@ export function useResolveReview() {
 // ── Ticket mutations ──────────────────────────────────────────
 
 interface TicketLike {
-  id: string
+  ticket_id: string
   status: "open" | "in_progress" | "resolved"
   [key: string]: unknown
 }
@@ -170,6 +176,13 @@ interface TicketLike {
 /**
  * Update ticket status — used by the kanban drag-and-drop.
  * Optimistic update: kanban card moves immediately, reverts on error.
+ *
+ * NOTE: fixed (2026-07-22) — useAdminTickets caches the RAW
+ * {tickets: [...]} envelope (TanStack Query's `select` runs at read time,
+ * not on the cached data), and the real ticket key is `ticket_id`, not
+ * `id`. The original version here assumed a bare array with an `id` field,
+ * so `Array.isArray(old)` was always false and the optimistic update
+ * silently did nothing.
  */
 export function useUpdateTicketStatus() {
   const queryClient = useQueryClient()
@@ -183,13 +196,17 @@ export function useUpdateTicketStatus() {
       await queryClient.cancelQueries({ queryKey: queryKeys.admin.tickets() })
       const previousTickets = queryClient.getQueryData(queryKeys.admin.tickets())
 
-      queryClient.setQueriesData({ queryKey: queryKeys.admin.tickets() }, (old: unknown) =>
-        Array.isArray(old)
-          ? (old as TicketLike[]).map((t) => (t.id === ticketId ? { ...t, status } : t))
-          : old
-      )
+      queryClient.setQueriesData({ queryKey: queryKeys.admin.tickets() }, (old: unknown) => {
+        if (old === null || typeof old !== "object" || !Array.isArray((old as { tickets?: unknown }).tickets)) return old
+        const envelope = old as { tickets: TicketLike[] }
+        return { ...envelope, tickets: envelope.tickets.map((t) => (t.ticket_id === ticketId ? { ...t, status } : t)) }
+      })
 
       return { previousTickets }
+    },
+
+    onSuccess: (_data, { status }) => {
+      TOAST.ticketMoved(status)
     },
 
     onError: (_err, _vars, context) => {

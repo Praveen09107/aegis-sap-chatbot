@@ -107,11 +107,12 @@ describe("useConfigSnapshot", () => {
 })
 
 describe("useAdminGaps", () => {
-  it("fetches gaps for the given day range", async () => {
+  it("fetches gaps for the given day range and unwraps the real {clusters: [...]} envelope", async () => {
     apiGetMock.mockReset()
-    apiGetMock.mockResolvedValue([])
-    renderHook(() => useAdminGaps(30), { wrapper: createWrapper() })
+    apiGetMock.mockResolvedValue({ clusters: [{ gap_id: "g1", gap_description: "VL150 error" }] })
+    const { result } = renderHook(() => useAdminGaps(30), { wrapper: createWrapper() })
     await waitFor(() => expect(apiGetMock).toHaveBeenCalledWith("admin/knowledge-gaps?days=30"))
+    await waitFor(() => expect(result.current.data).toEqual([{ gap_id: "g1", gap_description: "VL150 error" }]))
   })
 
   it("surfaces a rejected request as an error state", async () => {
@@ -128,7 +129,7 @@ describe("useAdminGaps", () => {
       resolveFirst = resolve
     })
     apiGetMock.mockImplementationOnce(() => firstCall)
-    apiGetMock.mockImplementationOnce(() => Promise.resolve([{ id: "gap-90d" }]))
+    apiGetMock.mockImplementationOnce(() => Promise.resolve({ clusters: [{ gap_id: "gap-90d" }] }))
 
     const { result, rerender } = renderHook(({ days }: { days: number }) => useAdminGaps(days), {
       wrapper: createWrapper(),
@@ -137,24 +138,36 @@ describe("useAdminGaps", () => {
 
     rerender({ days: 90 })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data).toEqual([{ id: "gap-90d" }])
+    expect(result.current.data).toEqual([{ gap_id: "gap-90d" }])
 
-    resolveFirst([{ id: "gap-7d-too-late" }])
+    resolveFirst({ clusters: [{ gap_id: "gap-7d-too-late" }] })
     await new Promise((r) => setTimeout(r, 0))
-    expect(result.current.data).toEqual([{ id: "gap-90d" }])
+    expect(result.current.data).toEqual([{ gap_id: "gap-90d" }])
   })
 })
 
 describe("useAdminAuditTrail", () => {
-  it("builds query params from filters", async () => {
+  it("builds query params from the real filter set (days/confidence_badge/page/page_size)", async () => {
     apiGetMock.mockReset()
-    apiGetMock.mockResolvedValue([])
-    renderHook(() => useAdminAuditTrail({ module: "SD", request_type: "vision" }), { wrapper: createWrapper() })
+    apiGetMock.mockResolvedValue({ entries: [], total: 0 })
+    renderHook(() => useAdminAuditTrail({ days: 30, confidence_badge: "green", page: 2, page_size: 50 }), {
+      wrapper: createWrapper(),
+    })
 
     await waitFor(() => expect(apiGetMock).toHaveBeenCalled())
     const path = apiGetMock.mock.calls[0][0] as string
-    expect(path).toContain("module=SD")
-    expect(path).toContain("request_type=vision")
+    expect(path).toContain("days=30")
+    expect(path).toContain("confidence_badge=green")
+    expect(path).toContain("page=2")
+    expect(path).toContain("page_size=50")
+  })
+
+  it("does not unwrap — real response carries {entries, total} both needed for pagination", async () => {
+    apiGetMock.mockReset()
+    apiGetMock.mockResolvedValue({ entries: [{ id: "a1" }], total: 42 })
+    const { result } = renderHook(() => useAdminAuditTrail(), { wrapper: createWrapper() })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual({ entries: [{ id: "a1" }], total: 42 })
   })
 
   it("surfaces a rejected request as an error state", async () => {
@@ -166,11 +179,12 @@ describe("useAdminAuditTrail", () => {
 })
 
 describe("useAdminReviewQueue", () => {
-  it("defaults to status=pending", async () => {
+  it("defaults to status=pending and unwraps the real {items: [...]} envelope", async () => {
     apiGetMock.mockReset()
-    apiGetMock.mockResolvedValue([])
-    renderHook(() => useAdminReviewQueue(), { wrapper: createWrapper() })
+    apiGetMock.mockResolvedValue({ items: [{ id: "r1", status: "pending" }] })
+    const { result } = renderHook(() => useAdminReviewQueue(), { wrapper: createWrapper() })
     await waitFor(() => expect(apiGetMock).toHaveBeenCalledWith("admin/review-queue?status=pending"))
+    await waitFor(() => expect(result.current.data).toEqual([{ id: "r1", status: "pending" }]))
   })
 
   it("surfaces a rejected request as an error state", async () => {
@@ -182,11 +196,12 @@ describe("useAdminReviewQueue", () => {
 })
 
 describe("useAdminTickets", () => {
-  it("fetches tickets, optionally filtered by status", async () => {
+  it("fetches tickets, optionally filtered by status, and unwraps the real {tickets: [...]} envelope", async () => {
     apiGetMock.mockReset()
-    apiGetMock.mockResolvedValue([])
-    renderHook(() => useAdminTickets("open"), { wrapper: createWrapper() })
+    apiGetMock.mockResolvedValue({ tickets: [{ ticket_id: "t1", status: "open" }] })
+    const { result } = renderHook(() => useAdminTickets("open"), { wrapper: createWrapper() })
     await waitFor(() => expect(apiGetMock).toHaveBeenCalledWith("admin/tickets?status=open"))
+    await waitFor(() => expect(result.current.data).toEqual([{ ticket_id: "t1", status: "open" }]))
   })
 
   it("surfaces a rejected request as an error state", async () => {

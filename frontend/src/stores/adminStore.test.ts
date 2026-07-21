@@ -123,9 +123,9 @@ describe("adminStore", () => {
     })
 
     it("setAuditFilters() merges, resetAuditFilters() clears", () => {
-      useAdminStore.getState().setAuditFilters({ module: "MM" })
-      useAdminStore.getState().setAuditFilters({ request_type: "vision" })
-      expect(useAdminStore.getState().auditFilters).toEqual({ module: "MM", request_type: "vision" })
+      useAdminStore.getState().setAuditFilters({ days: 30 })
+      useAdminStore.getState().setAuditFilters({ confidence_badge: "green" })
+      expect(useAdminStore.getState().auditFilters).toEqual({ days: 30, confidence_badge: "green" })
 
       useAdminStore.getState().resetAuditFilters()
       expect(useAdminStore.getState().auditFilters).toEqual({})

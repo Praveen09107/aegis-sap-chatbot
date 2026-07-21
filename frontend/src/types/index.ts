@@ -238,10 +238,16 @@ export interface DocFilters {
   status?: string
 }
 
+/**
+ * Confirmed (2026-07-22) against the real GET /admin/audit-trail (F13): the
+ * only accepted query params are `days` (a single relative window) and
+ * `confidence_badge` — no date_from/date_to/module/request_type params
+ * exist server-side. `page`/`page_size` drive the real endpoint's own
+ * pagination envelope ({entries, total}).
+ */
 export interface AuditFilters {
-  date_from?: string
-  date_to?: string
+  days?: number
   confidence_badge?: ConfidenceBadge
-  module?: string
-  request_type?: string
+  page?: number
+  page_size?: number
 }
