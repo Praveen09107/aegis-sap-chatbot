@@ -25,6 +25,12 @@ export type { RegistryEntry, ConfigEntry, GapEntry, AuditEntry, ReviewItem, Tick
 // Analytics
 export { useAdminAnalytics } from "./adminAnalytics"
 
+// Health (system health grid's useSystemHealth/useAdminMetrics stay disclosed-gap
+// placeholders above; these three are the real, confirmed endpoints — see
+// adminHealth.ts's own doc comments for each)
+export { usePipelineHealth, useInferenceHealth, useAttentionEntries } from "./adminHealth"
+export type { PipelineHealthData, InferenceHealthData, InferenceChainTier, KnowledgeEntrySummary } from "./adminHealth"
+
 // Mutations
 export {
   useDeprecateDocument,

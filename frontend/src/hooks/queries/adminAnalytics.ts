@@ -10,7 +10,10 @@ interface TimeSeriesPoint {
 }
 
 interface AnalyticsResponse {
-  validation_score_trend: TimeSeriesPoint[]
+  // {date, score} — not the generic TimeSeriesPoint {date, value} shape,
+  // to match ValidationScoreChart's real prop type (and the dashboard's own
+  // validation_score_7d field naming, FRONTEND_17) exactly.
+  validation_score_trend: Array<{ date: string; score: number }>
   confidence_distribution: {
     date: string
     green: number

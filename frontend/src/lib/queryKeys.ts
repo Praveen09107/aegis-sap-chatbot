@@ -28,6 +28,9 @@ export const queryKeys = {
     tickets: (status?: string) => ["admin", "tickets", status ?? "all"] as const,
     systemHealth: () => ["admin", "health"] as const,
     analytics: (range: string) => ["admin", "analytics", range] as const,
+    pipelineHealth: () => ["quick-entry", "health"] as const,
+    inferenceHealth: () => ["admin", "inference-health"] as const,
+    attentionEntries: () => ["admin", "knowledge-entries", "attention"] as const,
   },
 
   // ── User preferences ──

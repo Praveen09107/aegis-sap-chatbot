@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/experimental-ct-react"
 import { ClaimHighlighter } from "@/components/admin/ClaimHighlighter"
 import { ReviewItemList } from "@/components/admin/ReviewItemList"
 import { ReviewItemDetail } from "@/components/admin/ReviewItemDetail"
-import { KanbanCard } from "@/components/admin/KanbanCard"
 import { KanbanColumn } from "@/components/admin/KanbanColumn"
 import type { ReviewItem } from "@/hooks/queries/adminData"
 
