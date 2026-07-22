@@ -28,6 +28,7 @@ const ADMIN_SHORTCUTS: ShortcutEntry[] = [
   { keys: ["K"], description: "Previous review item", category: "Review Queue" },
   { keys: ["A"], description: "Approve correction", category: "Review Queue" },
   { keys: ["X"], description: "Skip item", category: "Review Queue" },
+  { keys: ["⌘", "A"], description: "Select all rows", category: "Admin tables" },
   { keys: ["⌘", "K"], description: "Command palette", category: "Navigation" },
   { keys: ["⌘", "/"], description: "Keyboard shortcuts", category: "Navigation" },
 ]

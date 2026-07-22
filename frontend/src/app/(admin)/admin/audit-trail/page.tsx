@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAdminAuditTrail } from "@/hooks/queries"
 import { useAdminStore } from "@/stores/adminStore"
+import { useURLStateSync } from "@/hooks/useURLStateSync"
 import { formatDateLocalized, formatScore } from "@/lib/utils"
 import { exportToCSV } from "@/lib/csvExport"
 import type { AuditEntry } from "@/hooks/queries/adminData"
@@ -59,6 +60,19 @@ export default function AuditTrailPage() {
   const [page, setPage] = useState(1)
 
   const days = auditFilters.days ?? 7
+
+  // Date range + confidence filter survive a page refresh via the URL
+  // (FRONTEND_SUPPLEMENT_02 Part 4) — page/viewMode/requestType stay
+  // client-only view state, not persisted.
+  useURLStateSync({ days, confidence_badge: auditFilters.confidence_badge ?? undefined }, (fromUrl) => {
+    // Only the keys actually present in the URL get applied — setAuditFilters
+    // merges into existing state, so an explicit `days: undefined` here would
+    // wipe out a real value just because confidence_badge alone was hydrated.
+    setAuditFilters({
+      ...(fromUrl.days ? { days: Number(fromUrl.days) } : {}),
+      ...(fromUrl.confidence_badge ? { confidence_badge: fromUrl.confidence_badge as ConfidenceBadge } : {}),
+    })
+  })
 
   const { data, isLoading } = useAdminAuditTrail({
     days,

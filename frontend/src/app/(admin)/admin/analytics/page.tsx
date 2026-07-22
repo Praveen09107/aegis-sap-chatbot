@@ -13,6 +13,7 @@ import {
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useAdminAnalytics } from "@/hooks/queries"
 import { useAdminStore } from "@/stores/adminStore"
+import { useURLStateSync } from "@/hooks/useURLStateSync"
 import { ANALYTICS_RANGES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 
@@ -36,6 +37,11 @@ import { cn } from "@/lib/utils"
 export default function AdminAnalyticsPage() {
   const { analyticsRange, setAnalyticsRange } = useAdminStore()
   const { data: analytics, isLoading } = useAdminAnalytics(analyticsRange)
+
+  // Date range survives a page refresh via the URL (FRONTEND_SUPPLEMENT_02 Part 4).
+  useURLStateSync({ range: analyticsRange }, (fromUrl) => {
+    if (fromUrl.range) setAnalyticsRange(fromUrl.range)
+  })
 
   return (
     <AdminPageWrapper>

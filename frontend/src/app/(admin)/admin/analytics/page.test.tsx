@@ -8,6 +8,14 @@ vi.mock("next-themes", () => ({
   useTheme: () => ({ theme: "dark" }),
 }))
 
+const routerReplaceMock = vi.fn()
+let searchParamsValue = new URLSearchParams()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: routerReplaceMock }),
+  usePathname: () => "/admin/analytics",
+  useSearchParams: () => searchParamsValue,
+}))
+
 const useAdminAnalyticsMock = vi.fn<() => { data: unknown; isLoading: boolean }>(() => ({ data: undefined, isLoading: true }))
 vi.mock("@/hooks/queries", () => ({
   useAdminAnalytics: () => useAdminAnalyticsMock(),
@@ -28,12 +36,20 @@ describe("AdminAnalyticsPage", () => {
   beforeEach(() => {
     useAdminAnalyticsMock.mockReset()
     useAdminAnalyticsMock.mockReturnValue({ data: undefined, isLoading: true })
+    routerReplaceMock.mockClear()
+    searchParamsValue = new URLSearchParams()
     useAdminStore.setState({ analyticsRange: "30d" })
   })
 
   it("renders the page header", () => {
     render(<AdminAnalyticsPage />)
     expect(screen.getByRole("heading", { name: "Analytics" })).toBeInTheDocument()
+  })
+
+  it("hydrates the range from the URL on mount (FRONTEND_SUPPLEMENT_02 Part 4)", () => {
+    searchParamsValue = new URLSearchParams("range=90d")
+    render(<AdminAnalyticsPage />)
+    expect(useAdminStore.getState().analyticsRange).toBe("90d")
   })
 
   it("renders all 4 range buttons and highlights the active one", () => {

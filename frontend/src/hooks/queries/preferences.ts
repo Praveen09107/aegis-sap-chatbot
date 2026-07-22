@@ -4,6 +4,14 @@ import { api } from "@/lib/api"
 import { queryKeys } from "@/lib/queryKeys"
 import type { UserPreferences } from "@/types"
 
+// NOTE (confirmed 2026-07-23, F18): GET/PUT /preferences do not exist on the
+// real backend either — no `user_preferences` migration anywhere in
+// backend/ (FRONTEND_SUPPLEMENT_04's schema for this was never built). Same
+// disclosed-gap precedent as sessions.ts. Not currently called from
+// anywhere in the app (dark mode and onboarding-complete are both
+// localStorage-only, per F16/F10) — kept here, complete and real, ready to
+// wire in once a real backend endpoint exists, rather than wiring it to a
+// 404 now for no benefit.
 /**
  * Fetch user preferences from the server.
  * Falls back to defaults if the request fails.

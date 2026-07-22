@@ -179,3 +179,59 @@ describe("DataTable — keyboard navigation", () => {
     expect(onRowClick).toHaveBeenCalledWith(rows[0])
   })
 })
+
+describe("DataTable — ⌘A select all (FRONTEND_SUPPLEMENT_02 Part 3)", () => {
+  it("⌘A selects every row when none (or only some) are selected", async () => {
+    const onSelectionChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <DataTable data={rows} columns={columns} keyField="id" selectable selectedKeys={new Set(["1"])} onSelectionChange={onSelectionChange} />
+    )
+
+    await user.keyboard("{Meta>}a{/Meta}")
+    expect(onSelectionChange).toHaveBeenCalledWith(new Set(["1", "2", "3"]))
+  })
+
+  it("⌘A deselects all when every row is already selected", async () => {
+    const onSelectionChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <DataTable
+        data={rows}
+        columns={columns}
+        keyField="id"
+        selectable
+        selectedKeys={new Set(["1", "2", "3"])}
+        onSelectionChange={onSelectionChange}
+      />
+    )
+
+    await user.keyboard("{Meta>}a{/Meta}")
+    expect(onSelectionChange).toHaveBeenCalledWith(new Set())
+  })
+
+  it("does nothing when the table isn't selectable", async () => {
+    const user = userEvent.setup()
+    render(<DataTable data={rows} columns={columns} keyField="id" />)
+
+    // Should not throw or do anything observable — nothing to assert on
+    // besides "this doesn't crash", since there's no onSelectionChange at all.
+    await user.keyboard("{Meta>}a{/Meta}")
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+  })
+
+  it("does not fire while focus is inside a text input (preserves native select-all-text)", async () => {
+    const onSelectionChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <div>
+        <input aria-label="Search" />
+        <DataTable data={rows} columns={columns} keyField="id" selectable selectedKeys={new Set()} onSelectionChange={onSelectionChange} />
+      </div>
+    )
+
+    await user.click(screen.getByLabelText("Search"))
+    await user.keyboard("{Meta>}a{/Meta}")
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+})

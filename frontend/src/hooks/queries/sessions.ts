@@ -6,6 +6,16 @@ import { toastError } from "@/lib/toast"
 import { useSessionStore } from "@/stores/sessionStore"
 import type { Session, SessionFilters } from "@/types"
 
+// NOTE (confirmed 2026-07-23, F18): GET/PUT/DELETE /sessions/* do not exist
+// on the real backend — no `sessions_handler.py`, no `sessions`/
+// `session_messages` migration anywhere in backend/ (FRONTEND_SUPPLEMENT_03's
+// full Postgres schema + endpoint spec for this feature was never built).
+// Same disclosed-gap precedent as /admin/metrics and /admin/analytics: built
+// fully per spec anyway, degrades honestly (api.ts's own error handling
+// surfaces the real 404 rather than faking data), ready to activate the
+// moment a backend session adds this endpoint. Employee session history is
+// NOT persisted across browser sessions until then.
+
 // ── Response types ────────────────────────────────────────────
 
 interface SessionListResponse {
@@ -60,7 +70,12 @@ export function useSessions(filters?: SessionFilters) {
       if (filters?.is_unresolved !== undefined) params.set("is_unresolved", String(filters.is_unresolved))
 
       const query = params.toString()
-      const response = await api.get<SessionListResponse>(`sessions${query ? `?${query}` : ""}`)
+      // silent: true — this fires automatically on every employee page load
+      // (SessionSidebar, history page), not from a user action; while the
+      // backend endpoint doesn't exist yet (see the module-level NOTE
+      // above), an error toast on every single page view would be far more
+      // disruptive than the sidebar's own empty-state already is.
+      const response = await api.get<SessionListResponse>(`sessions${query ? `?${query}` : ""}`, { silent: true })
       return response.sessions
     },
     staleTime: 30_000, // 30s — sessions don't change mid-chat
@@ -97,7 +112,10 @@ export function useDeleteSession() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (id: string) => api.delete(`sessions/${id}`),
+    // silent: true — api.delete() would otherwise also toast its own
+    // generic "Request failed" message, stacking a second toast on top of
+    // this mutation's own, more specific onError below every single time.
+    mutationFn: (id: string) => api.delete(`sessions/${id}`, { silent: true }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all() })
     },

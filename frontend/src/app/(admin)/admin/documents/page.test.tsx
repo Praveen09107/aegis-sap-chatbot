@@ -5,6 +5,14 @@ import AdminDocumentsPage from "./page"
 import { useAdminStore } from "@/stores/adminStore"
 import type { DocumentRecord, DocFilters } from "@/types"
 
+const routerReplaceMock = vi.fn()
+let searchParamsValue = new URLSearchParams()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: routerReplaceMock }),
+  usePathname: () => "/admin/documents",
+  useSearchParams: () => searchParamsValue,
+}))
+
 const useAdminDocumentsMock = vi.fn<(filters?: DocFilters) => { data: DocumentRecord[]; isLoading: boolean }>(() => ({
   data: [],
   isLoading: false,
@@ -47,11 +55,19 @@ describe("AdminDocumentsPage", () => {
     bulkDeprecateMutate.mockClear()
     uploadMutateAsync.mockClear()
     exportToCSVMock.mockClear()
+    routerReplaceMock.mockClear()
+    searchParamsValue = new URLSearchParams()
     useAdminStore.setState({
       documentFilters: {},
       selectedDocumentIds: new Set(),
       uploadProgress: {},
     })
+  })
+
+  it("hydrates documentFilters from the URL on mount (FRONTEND_SUPPLEMENT_02 Part 4)", () => {
+    searchParamsValue = new URLSearchParams("module=SD&status=active")
+    render(<AdminDocumentsPage />)
+    expect(useAdminStore.getState().documentFilters).toEqual({ module: "SD", status: "active" })
   })
 
   it("renders the page header and upload zone", () => {

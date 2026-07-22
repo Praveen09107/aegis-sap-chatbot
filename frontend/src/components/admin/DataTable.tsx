@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 
 // ── Column definition ──────────────────────────────────────
 //
@@ -152,6 +153,31 @@ export function DataTable<TRow extends { [K in IdField]: string }, IdField exten
       onSelectionChange(new Set())
     }
   }
+
+  // ⌘A selects/deselects all rows (FRONTEND_27_ACCESSIBILITY.md's keyboard
+  // map lists this; FRONTEND_SUPPLEMENT_02 confirmed it was never wired up).
+  // useKeyboardShortcuts' default ignoreInInput already skips this while
+  // focus is in a text input/textarea, so a user selecting text in an
+  // admin page's search box still gets the browser's native select-all-text
+  // behavior instead of this being hijacked. Registered as an empty array
+  // (rather than just checking `selectable` inside the handler) when this
+  // table isn't selectable at all, so preventDefault never fires and ⌘A's
+  // native "select all page text" behavior is left alone on non-selectable
+  // tables (Registry, Config Snapshot, etc. don't use row selection).
+  useKeyboardShortcuts(
+    selectable && onSelectionChange
+      ? [
+          {
+            key: "a",
+            meta: true,
+            preventDefault: true,
+            handler: () => {
+              onSelectionChange(allSelected ? new Set() : new Set(allKeys))
+            },
+          },
+        ]
+      : []
+  )
 
   function handleSelectRow(key: string, checked: boolean) {
     if (!onSelectionChange) return

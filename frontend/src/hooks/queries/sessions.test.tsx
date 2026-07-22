@@ -49,7 +49,7 @@ describe("useSessions", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual([makeSession({ id: "s1" })])
-    expect(apiGetMock).toHaveBeenCalledWith("sessions")
+    expect(apiGetMock).toHaveBeenCalledWith("sessions", { silent: true })
   })
 
   it("builds query params from filters", async () => {
@@ -167,7 +167,7 @@ describe("useDeleteSession", () => {
     result.current.mutate("s1")
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(apiDeleteMock).toHaveBeenCalledWith("sessions/s1")
+    expect(apiDeleteMock).toHaveBeenCalledWith("sessions/s1", { silent: true })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["sessions"] })
   })
 

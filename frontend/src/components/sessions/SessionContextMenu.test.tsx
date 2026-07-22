@@ -112,7 +112,7 @@ describe("SessionContextMenu", () => {
     await user.click(screen.getByText("Delete session"))
     await user.click(await screen.findByRole("button", { name: "Delete" }))
 
-    await waitFor(() => expect(apiDeleteMock).toHaveBeenCalledWith("sessions/s1"))
+    await waitFor(() => expect(apiDeleteMock).toHaveBeenCalledWith("sessions/s1", { silent: true }))
     expect(toastMock.sessionDeleted).toHaveBeenCalledTimes(1)
   })
 

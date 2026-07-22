@@ -102,6 +102,14 @@ export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarPr
   }, [grouped, shouldVirtualize])
 
   const scrollParentRef = useRef<HTMLDivElement>(null)
+  // React Compiler correctly can't prove @tanstack/react-virtual's returned
+  // functions (getVirtualItems/getTotalSize/measureElement) are safe to
+  // memoize, so it skips optimizing this component — expected and harmless
+  // here: nothing in this component depends on those functions having
+  // stable identity across renders, only on their (always-fresh) return
+  // values being read during render, which the compiler's fallback (treat
+  // this component as un-memoized) still handles correctly.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: flatRows.length,
     getScrollElement: () => scrollParentRef.current,

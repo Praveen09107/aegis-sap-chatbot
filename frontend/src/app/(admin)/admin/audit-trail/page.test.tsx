@@ -5,6 +5,14 @@ import AuditTrailPage from "./page"
 import { useAdminStore } from "@/stores/adminStore"
 import type { AuditEntry } from "@/hooks/queries/adminData"
 
+const routerReplaceMock = vi.fn()
+let searchParamsValue = new URLSearchParams()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: routerReplaceMock }),
+  usePathname: () => "/admin/audit-trail",
+  useSearchParams: () => searchParamsValue,
+}))
+
 const useAdminAuditTrailMock = vi.fn<() => { data: { entries: AuditEntry[]; total: number } | undefined; isLoading: boolean }>(() => ({
   data: { entries: [], total: 0 },
   isLoading: false,
@@ -40,12 +48,20 @@ describe("AuditTrailPage", () => {
     useAdminAuditTrailMock.mockReset()
     useAdminAuditTrailMock.mockReturnValue({ data: { entries: [], total: 0 }, isLoading: false })
     exportToCSVMock.mockClear()
+    routerReplaceMock.mockClear()
+    searchParamsValue = new URLSearchParams()
     useAdminStore.setState({ auditFilters: {} })
   })
 
   it("renders the page header", () => {
     render(<AuditTrailPage />)
     expect(screen.getByRole("heading", { name: "Audit trail" })).toBeInTheDocument()
+  })
+
+  it("hydrates auditFilters from the URL on mount (FRONTEND_SUPPLEMENT_02 Part 4)", () => {
+    searchParamsValue = new URLSearchParams("days=30&confidence_badge=green")
+    render(<AuditTrailPage />)
+    expect(useAdminStore.getState().auditFilters).toEqual({ days: 30, confidence_badge: "green" })
   })
 
   it("defaults to the timeline view showing entries grouped by date", () => {

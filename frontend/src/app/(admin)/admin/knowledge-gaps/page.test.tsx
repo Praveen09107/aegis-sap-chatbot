@@ -5,6 +5,14 @@ import KnowledgeGapsPage from "./page"
 import { useAdminStore } from "@/stores/adminStore"
 import type { GapEntry } from "@/hooks/queries/adminData"
 
+const routerReplaceMock = vi.fn()
+let searchParamsValue = new URLSearchParams()
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: routerReplaceMock }),
+  usePathname: () => "/admin/knowledge-gaps",
+  useSearchParams: () => searchParamsValue,
+}))
+
 const useAdminGapsMock = vi.fn<() => { data: GapEntry[]; isLoading: boolean }>(() => ({ data: [], isLoading: false }))
 
 vi.mock("@/hooks/queries", () => ({
@@ -29,6 +37,8 @@ describe("KnowledgeGapsPage", () => {
   beforeEach(() => {
     useAdminGapsMock.mockReset()
     useAdminGapsMock.mockReturnValue({ data: [], isLoading: false })
+    routerReplaceMock.mockClear()
+    searchParamsValue = new URLSearchParams()
     useAdminStore.setState({ gapsRangeDays: 30, gapsSearch: "" })
     window.localStorage.clear()
   })
@@ -36,6 +46,12 @@ describe("KnowledgeGapsPage", () => {
   it("renders the page header", () => {
     render(<KnowledgeGapsPage />)
     expect(screen.getByRole("heading", { name: "Knowledge gaps" })).toBeInTheDocument()
+  })
+
+  it("hydrates the range from the URL on mount (FRONTEND_SUPPLEMENT_02 Part 4)", () => {
+    searchParamsValue = new URLSearchParams("range=90")
+    render(<KnowledgeGapsPage />)
+    expect(useAdminStore.getState().gapsRangeDays).toBe(90)
   })
 
   it("groups gaps into severity sections derived from count_7d", () => {

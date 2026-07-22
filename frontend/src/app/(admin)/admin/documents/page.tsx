@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button"
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useAdminDocuments, useDeprecateDocument, useBulkDeprecateDocuments, useUploadDocument } from "@/hooks/queries"
 import { useAdminStore } from "@/stores/adminStore"
+import { useURLStateSync } from "@/hooks/useURLStateSync"
 import { exportToCSV } from "@/lib/csvExport"
-import type { DocumentRecord } from "@/types"
+import type { DocumentRecord, DocFilters } from "@/types"
 
 // ── Status badge mapping ──────────────────────────────────────
 
@@ -138,6 +139,14 @@ export default function AdminDocumentsPage() {
   const { data: documents = [], isLoading } = useAdminDocuments(documentFilters)
   const bulkDeprecate = useBulkDeprecateDocuments()
   const uploadDocument = useUploadDocument()
+
+  // Filters survive a page refresh via the URL (FRONTEND_SUPPLEMENT_02 Part 4).
+  useURLStateSync(
+    { module: documentFilters.module, status: documentFilters.status, content_type: documentFilters.content_type },
+    (fromUrl) => {
+      setDocumentFilters(fromUrl as Partial<DocFilters>)
+    }
+  )
 
   // ── Computed stats ────────────────────────────────────────
 

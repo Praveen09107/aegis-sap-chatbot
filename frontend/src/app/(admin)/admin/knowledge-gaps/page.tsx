@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useAdminGaps } from "@/hooks/queries"
 import { useAdminStore } from "@/stores/adminStore"
 import { useLocalStorage } from "@/hooks/useLocalStorage"
+import { useURLStateSync } from "@/hooks/useURLStateSync"
 import { ANALYTICS_RANGES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import type { GapEntry } from "@/hooks/queries/adminData"
@@ -51,6 +52,11 @@ function GapSection({ label, entries, onHide }: { label: string; entries: GapEnt
 export default function KnowledgeGapsPage() {
   const { gapsRangeDays, setGapsRangeDays, gapsSearch, setGapsSearch } = useAdminStore()
   const [hiddenIds, setHiddenIds] = useLocalStorage<string[]>("aegis:hidden-gap-ids", [])
+
+  // Date range survives a page refresh via the URL (FRONTEND_SUPPLEMENT_02 Part 4).
+  useURLStateSync({ range: gapsRangeDays }, (fromUrl) => {
+    if (fromUrl.range) setGapsRangeDays(Number(fromUrl.range))
+  })
 
   const { data: gaps = [], isLoading } = useAdminGaps(gapsRangeDays)
 
