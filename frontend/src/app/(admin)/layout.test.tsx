@@ -35,11 +35,32 @@ describe("AdminLayout", () => {
   beforeEach(() => {
     replaceMock.mockClear()
     setThemeMock.mockClear()
+    window.localStorage.clear()
     useAuthMock.mockReturnValue({ isAuthenticated: true, isAdmin: true, initializing: false })
     useUIStore.setState({ commandPaletteOpen: false })
   })
 
-  it("forces dark theme on mount", () => {
+  it("soft-forces dark theme on mount when there is no stored preference", () => {
+    render(
+      <AdminLayout>
+        <div>admin content</div>
+      </AdminLayout>
+    )
+    expect(setThemeMock).toHaveBeenCalledWith("dark")
+  })
+
+  it("does not override an explicit stored light preference (fixed 2026-07-22)", () => {
+    window.localStorage.setItem("aegis:dark-mode", "light")
+    render(
+      <AdminLayout>
+        <div>admin content</div>
+      </AdminLayout>
+    )
+    expect(setThemeMock).not.toHaveBeenCalled()
+  })
+
+  it("still soft-forces dark when the stored preference is explicitly 'dark'", () => {
+    window.localStorage.setItem("aegis:dark-mode", "dark")
     render(
       <AdminLayout>
         <div>admin content</div>

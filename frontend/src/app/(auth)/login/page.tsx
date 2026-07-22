@@ -1,28 +1,64 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Loader2, Eye, EyeOff } from "lucide-react"
 import { loginWithCredentials, isAuthenticated, getUserRole } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { orgName } from "@/lib/constants"
 
+/**
+ * Validates a `redirect` query param before using it as a post-login
+ * destination — never redirect to an attacker-controlled absolute URL.
+ * Fixed (2026-07-22): this param has been set by proxy.ts's own
+ * middleware (unauthenticated page visits) since F03, but nothing ever
+ * read it — every login always landed on the role-based default,
+ * silently dropping wherever the user actually came from.
+ *
+ * Must be a same-origin relative path: starts with exactly one `/`, never
+ * `//` (protocol-relative — e.g. `//evil.com` — browsers treat this as an
+ * absolute URL to a different host) and never contains a scheme.
+ */
+function getSafeRedirectPath(raw: string | null): string | null {
+  if (!raw) return null
+  if (!raw.startsWith("/") || raw.startsWith("//")) return null
+  if (raw.includes(":")) return null
+  return raw
+}
+
+/**
+ * useSearchParams() requires a Suspense boundary during static generation
+ * (Next.js 16 bails the whole page out to client-only rendering otherwise —
+ * confirmed live: `next build` fails prerendering /login without this).
+ * Split into an inner form component + a thin Suspense-wrapped default
+ * export, rather than the whole page falling back to CSR-only.
+ */
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg-secondary" />}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = getSafeRedirectPath(searchParams.get("redirect"))
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated()) {
       const role = getUserRole()
-      router.replace(role === "it-admin" ? "/admin/dashboard" : "/")
+      router.replace(redirectTo ?? (role === "it-admin" ? "/admin/dashboard" : "/"))
     }
-  }, [router])
+  }, [router, redirectTo])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,7 +72,7 @@ export default function LoginPage() {
 
     if (result.success) {
       const role = getUserRole()
-      router.push(role === "it-admin" ? "/admin/dashboard" : "/")
+      router.push(redirectTo ?? (role === "it-admin" ? "/admin/dashboard" : "/"))
     } else {
       setError(result.error ?? "Login failed. Please check your credentials.")
       setPassword("")

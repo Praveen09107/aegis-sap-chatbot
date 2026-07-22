@@ -1,8 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { motion, AnimatePresence } from "motion/react"
 import { WifiOff, Wifi } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { EXPAND_DOWN } from "@/lib/animations"
 
 function subscribe(callback: () => void) {
   window.addEventListener("online", callback)
@@ -30,6 +32,10 @@ function getServerSnapshot() {
  * manual useState+useEffect sync — the correct primitive for external
  * browser state, and avoids a setState-in-effect on mount (flagged by
  * eslint-plugin-react-hooks v7's react-hooks/set-state-in-effect rule).
+ *
+ * Expands down / collapses via the shared EXPAND_DOWN variant (FRONTEND_26)
+ * — reduced motion is handled globally by the root layout's
+ * <MotionConfig reducedMotion="user"> (F15), no manual check needed here.
  */
 export function OfflineBanner() {
   const isOnline = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
@@ -49,31 +55,38 @@ export function OfflineBanner() {
     return () => clearTimeout(timer)
   }, [isOnline])
 
-  if (isOnline && !showReconnected) return null
+  const show = !isOnline || showReconnected
 
   return (
-    <div
-      className={cn(
-        "fixed top-0 inset-x-0 z-notification",
-        "flex items-center justify-center gap-2",
-        "py-2 px-4 text-sm font-medium",
-        "transition-all duration-[var(--duration-slow)]",
-        !isOnline ? "bg-danger text-white" : "bg-success text-white"
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          variants={EXPAND_DOWN}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className={cn(
+            "fixed top-0 inset-x-0 z-notification",
+            "flex items-center justify-center gap-2",
+            "py-2 px-4 text-sm font-medium",
+            !isOnline ? "bg-danger text-white" : "bg-success text-white"
+          )}
+          role="status"
+          aria-live="assertive"
+        >
+          {!isOnline ? (
+            <>
+              <WifiOff className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>No network connection — your work is saved locally</span>
+            </>
+          ) : (
+            <>
+              <Wifi className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Connection restored</span>
+            </>
+          )}
+        </motion.div>
       )}
-      role="status"
-      aria-live="assertive"
-    >
-      {!isOnline ? (
-        <>
-          <WifiOff className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span>No network connection — your work is saved locally</span>
-        </>
-      ) : (
-        <>
-          <Wifi className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span>Connection restored</span>
-        </>
-      )}
-    </div>
+    </AnimatePresence>
   )
 }

@@ -52,6 +52,46 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("Custom: boom")).toBeInTheDocument()
   })
 
+  it("variant='page' renders the larger page-style fallback with section-specific copy", () => {
+    render(
+      <ErrorBoundary section="documents table" variant="page">
+        <Bomb shouldThrow={true} />
+      </ErrorBoundary>
+    )
+    expect(screen.getByText("Failed to load documents table")).toBeInTheDocument()
+    expect(screen.getByRole("alert")).toBeInTheDocument()
+  })
+
+  it("variant='page' with no section shows generic 'Something went wrong' copy", () => {
+    render(
+      <ErrorBoundary variant="page">
+        <Bomb shouldThrow={true} />
+      </ErrorBoundary>
+    )
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument()
+  })
+
+  it("variant='page' also resets via its own Try again button once children stop throwing", async () => {
+    const user = userEvent.setup()
+    let throwOnRender = true
+
+    function FlakyBomb() {
+      if (throwOnRender) throw new Error("boom")
+      return <div>Recovered</div>
+    }
+
+    render(
+      <ErrorBoundary variant="page">
+        <FlakyBomb />
+      </ErrorBoundary>
+    )
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument()
+
+    throwOnRender = false
+    await user.click(screen.getByRole("button", { name: "Try again" }))
+    expect(screen.getByText("Recovered")).toBeInTheDocument()
+  })
+
   it("'Try again' resets the boundary, re-rendering children if they no longer throw", async () => {
     const user = userEvent.setup()
     function Wrapper() {

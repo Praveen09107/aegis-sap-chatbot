@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
-import { render, screen, act } from "@testing-library/react"
+import { render, screen, act, waitForElementToBeRemoved } from "@testing-library/react"
 import { OfflineBanner } from "./OfflineBanner"
 
 function setOnlineStatus(value: boolean) {
@@ -46,8 +46,14 @@ describe("OfflineBanner", () => {
     act(() => window.dispatchEvent(new Event("online")))
     expect(screen.getByText("Connection restored")).toBeInTheDocument()
 
+    // Flips the "showReconnected" state via the 3s setTimeout, then switch
+    // to real timers so motion's own requestAnimationFrame-driven exit
+    // transition can actually run and remove the element — fake timers
+    // only advance the setState-triggering setTimeout, not the animation
+    // library's separate RAF loop.
     act(() => vi.advanceTimersByTime(3000))
-    expect(screen.queryByRole("status")).not.toBeInTheDocument()
+    vi.useRealTimers()
+    await waitForElementToBeRemoved(() => screen.queryByRole("status"))
   })
 
   it("does not show 'Connection restored' on a fresh mount that was never offline", () => {

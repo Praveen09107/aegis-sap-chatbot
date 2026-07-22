@@ -12,6 +12,7 @@ import { LoadingScreen } from "@/components/shared/LoadingScreen"
 import { useUIStore } from "@/stores/uiStore"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useAuth } from "@/hooks/useAuth"
+import { STORAGE_KEYS } from "@/lib/constants"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { setTheme } = useTheme()
@@ -19,9 +20,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { isAuthenticated, isAdmin, initializing } = useAuth()
   const { commandPaletteOpen, toggleCommandPalette, closeCommandPalette } = useUIStore()
 
-  // Force dark mode for admin portal — the monitoring console aesthetic
+  // Soft-force dark mode for admin portal — the monitoring console
+  // aesthetic — but only when the user hasn't explicitly chosen light via
+  // ThemeToggle (FRONTEND_25). Fixed (2026-07-22): this previously called
+  // setTheme("dark") unconditionally on every mount, silently overriding an
+  // admin's explicit light-mode choice the moment they navigated away and
+  // back to any admin page.
   useEffect(() => {
-    setTheme("dark")
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEYS.DARK_MODE) : null
+    if (stored !== "light") {
+      setTheme("dark")
+    }
   }, [setTheme])
 
   // Redirect non-admin users

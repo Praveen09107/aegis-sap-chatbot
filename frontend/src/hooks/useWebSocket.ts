@@ -99,6 +99,26 @@ const WS_PONG_TIMEOUT_CODE = 4002
  *    response incomplete (with a Retry action) rather than guessing at
  *    reconnect-and-resend semantics that risk a duplicate submission — the
  *    next real send (manual retry or a new message) connects fresh anyway.
+ *
+ * F16 / FRONTEND_26 note: that document's own reconnection design proposes
+ * a silent auto-reconnect loop (3 attempts, 1s/2s/4s backoff) on unexpected
+ * close. Deliberately NOT adopted here — it would reintroduce the exact
+ * duplicate-submission risk point 4 above already avoids (auto-reconnecting
+ * and blindly resending an in-flight message the backend may have already
+ * received). The existing mark-incomplete-plus-manual-retry design already
+ * achieves FRONTEND_26's real goal (a dropped connection doesn't strand the
+ * user) through a different, safer mechanism: the next explicit send
+ * reuses `connect(currentSessionId)`, which opens a fresh socket against
+ * the SAME session_id.
+ *
+ * Confirmed live (2026-07-22) against the real backend, not just that a
+ * reconnect attempt fires: opened a WS connection, completed a real turn,
+ * closed the connection, then opened a second WS connection passing the
+ * same session_id — the backend resumed the identical session
+ * (session_ready echoed the same session_id) and ran a full real round
+ * trip (retrieval → CRAG → a defined completion message) on the
+ * reconnected socket. The reconnect-on-next-send mechanism genuinely
+ * re-establishes a working chat session against live infrastructure.
  */
 export function useWebSocket(): UseWebSocketReturn {
   const queryClient = useQueryClient()

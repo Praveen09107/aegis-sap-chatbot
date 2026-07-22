@@ -13,6 +13,7 @@
  */
 
 import { toast } from "sonner"
+import { getHttpErrorMessage } from "@/lib/errorCodes"
 
 export class APIError extends Error {
   constructor(
@@ -23,6 +24,28 @@ export class APIError extends Error {
     super(detail)
     this.name = "APIError"
   }
+}
+
+/**
+ * Type guard for a specific HTTP status on a caught error. Works off the
+ * real APIError class already thrown by every request path here — this
+ * project uses one error class with a `.status` field (0 = network
+ * failure) rather than FRONTEND_26's proposed separate NetworkError/
+ * AuthError/ServerError/ClientError hierarchy, so classification is done
+ * this way instead of `instanceof` on multiple classes.
+ *
+ * @example
+ * onError: (err) => {
+ *   if (isApiStatus(err, 409)) toastError('This entry already exists')
+ * }
+ */
+export function isApiStatus(err: unknown, status: number): boolean {
+  return err instanceof APIError && err.status === status
+}
+
+/** True for a network-layer failure (offline, DNS, fetch throw) — status 0. */
+export function isNetworkError(err: unknown): boolean {
+  return err instanceof APIError && err.status === 0
 }
 
 interface RequestOptions extends Omit<RequestInit, "body"> {
@@ -140,26 +163,28 @@ async function execute<T>(
     if (!silent) {
       switch (response.status) {
         case 401:
-          toast.error("Session expired. Redirecting to login...")
+          toast.error(getHttpErrorMessage(401))
+          // Preserves the intended destination via `redirect` — the same
+          // query param name proxy.ts's own middleware-level 401 already
+          // uses (fixed 2026-07-22: this previously always sent the user to
+          // a bare /login, silently dropping wherever they were, and the
+          // login page didn't read the param either — see login/page.tsx).
           setTimeout(() => {
-            window.location.href = "/login"
+            const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+            window.location.href = `/login?redirect=${returnTo}`
           }, 1500)
           break
         case 403:
-          toast.error("You do not have permission to perform this action.")
-          break
         case 404:
-          toast.error("The requested resource was not found.")
+        case 429:
+          toast.error(getHttpErrorMessage(response.status))
           break
         case 422:
           toast.error(`Validation error: ${detail}`)
           break
-        case 429:
-          toast.error("Too many requests. Please wait a moment.")
-          break
         default:
           if (response.status >= 500) {
-            toast.error("Server error. Please try again or contact IT support.")
+            toast.error(getHttpErrorMessage(response.status))
           } else {
             toast.error(detail)
           }

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { api, APIError } from "./api"
+import { toast } from "sonner"
+import { api, APIError, isApiStatus, isNetworkError } from "./api"
+import { getHttpErrorMessage } from "./errorCodes"
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
+}))
 
 // ── Mock XMLHttpRequest ──────────────────────────────────────────
 //
@@ -158,5 +164,90 @@ describe("api.upload — without onProgress (fetch path, unchanged)", () => {
       "/api/upload/screenshot",
       expect.objectContaining({ method: "POST" })
     )
+  })
+})
+
+describe("isApiStatus / isNetworkError", () => {
+  it("isApiStatus matches only the given status on a real APIError", () => {
+    const err = new APIError(404, "not found")
+    expect(isApiStatus(err, 404)).toBe(true)
+    expect(isApiStatus(err, 409)).toBe(false)
+  })
+
+  it("isApiStatus is false for a non-APIError", () => {
+    expect(isApiStatus(new Error("plain"), 404)).toBe(false)
+  })
+
+  it("isNetworkError is true only for status 0", () => {
+    expect(isNetworkError(new APIError(0, "Network error"))).toBe(true)
+    expect(isNetworkError(new APIError(500, "server error"))).toBe(false)
+    expect(isNetworkError(new Error("plain"))).toBe(false)
+  })
+})
+
+describe("status-code toasts route through getHttpErrorMessage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  it.each([403, 404, 429, 500, 503])("toasts the mapped message for a %i response", async (status) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ detail: "irrelevant" }), { status, headers: { "content-type": "application/json" } }))
+    )
+    await expect(api.get("admin/documents")).rejects.toBeInstanceOf(APIError)
+    expect(toast.error).toHaveBeenCalledWith(getHttpErrorMessage(status))
+  })
+
+  it("toasts the backend's own detail for a 422 validation error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ detail: "module is required" }), { status: 422, headers: { "content-type": "application/json" } }))
+    )
+    await expect(api.post("admin/config-snapshot/AR/credit_days", { config_value: "" })).rejects.toBeInstanceOf(APIError)
+    expect(toast.error).toHaveBeenCalledWith("Validation error: module is required")
+  })
+
+  it("does not toast at all when silent is true", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ detail: "not found" }), { status: 404, headers: { "content-type": "application/json" } }))
+    )
+    await expect(api.get("admin/documents", { silent: true })).rejects.toBeInstanceOf(APIError)
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+})
+
+describe("401 handling — preserves the intended destination", () => {
+  const originalLocation = window.location
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // window.location.href is not assignable directly in jsdom without a
+    // configurable redefine — same pattern needed to observe the real
+    // redirect target this code sets.
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, href: "", pathname: "/history", search: "?foo=bar" },
+    })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ detail: "Session expired" }), { status: 401, headers: { "content-type": "application/json" } }))
+    )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    Object.defineProperty(window, "location", { configurable: true, value: originalLocation })
+  })
+
+  it("redirects to /login with a redirect param carrying the current path + query", async () => {
+    const promise = api.get("admin/documents")
+    await expect(promise).rejects.toBeInstanceOf(APIError)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(window.location.href).toBe(`/login?redirect=${encodeURIComponent("/history?foo=bar")}`)
   })
 })

@@ -5,9 +5,11 @@ import LoginPage from "./page"
 
 const pushMock = vi.fn()
 const replaceMock = vi.fn()
+let searchParamsValue = new URLSearchParams()
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useSearchParams: () => searchParamsValue,
 }))
 
 const loginWithCredentialsMock = vi.fn()
@@ -27,6 +29,7 @@ describe("LoginPage", () => {
     loginWithCredentialsMock.mockReset()
     isAuthenticatedMock.mockReturnValue(false)
     getUserRoleMock.mockReturnValue("employee")
+    searchParamsValue = new URLSearchParams()
   })
 
   it("never renders a hardcoded company name — reads orgName instead", () => {
@@ -83,6 +86,58 @@ describe("LoginPage", () => {
     render(<LoginPage />)
 
     expect(replaceMock).toHaveBeenCalledWith("/admin/dashboard")
+  })
+
+  it("routes to the safe redirect param after a successful login, instead of the role default", async () => {
+    searchParamsValue = new URLSearchParams("redirect=%2Fhistory%3Ffoo%3Dbar")
+    loginWithCredentialsMock.mockResolvedValue({ success: true })
+    getUserRoleMock.mockReturnValue("employee")
+    const user = userEvent.setup()
+
+    render(<LoginPage />)
+    await user.type(screen.getByLabelText("Username"), "jdoe")
+    await user.type(screen.getByLabelText("Password"), "hunter2")
+    await user.click(screen.getByRole("button", { name: "Sign in" }))
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/history?foo=bar"))
+  })
+
+  it("ignores a protocol-relative redirect param (open-redirect attempt) and falls back to the role default", async () => {
+    searchParamsValue = new URLSearchParams("redirect=%2F%2Fevil.com")
+    loginWithCredentialsMock.mockResolvedValue({ success: true })
+    getUserRoleMock.mockReturnValue("employee")
+    const user = userEvent.setup()
+
+    render(<LoginPage />)
+    await user.type(screen.getByLabelText("Username"), "jdoe")
+    await user.type(screen.getByLabelText("Password"), "hunter2")
+    await user.click(screen.getByRole("button", { name: "Sign in" }))
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"))
+  })
+
+  it("ignores a redirect param containing a scheme and falls back to the role default", async () => {
+    searchParamsValue = new URLSearchParams("redirect=" + encodeURIComponent("/redirect:javascript:alert(1)"))
+    loginWithCredentialsMock.mockResolvedValue({ success: true })
+    getUserRoleMock.mockReturnValue("employee")
+    const user = userEvent.setup()
+
+    render(<LoginPage />)
+    await user.type(screen.getByLabelText("Username"), "jdoe")
+    await user.type(screen.getByLabelText("Password"), "hunter2")
+    await user.click(screen.getByRole("button", { name: "Sign in" }))
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"))
+  })
+
+  it("uses the safe redirect param for the already-authenticated redirect too", () => {
+    searchParamsValue = new URLSearchParams("redirect=%2Fhistory")
+    isAuthenticatedMock.mockReturnValue(true)
+    getUserRoleMock.mockReturnValue("employee")
+
+    render(<LoginPage />)
+
+    expect(replaceMock).toHaveBeenCalledWith("/history")
   })
 
   it("keeps the submit button disabled until both fields are non-empty", async () => {
