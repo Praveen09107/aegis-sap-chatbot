@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { cn, formatFileSize } from "@/lib/utils"
 import { LIMITS } from "@/lib/constants"
 import { toastError } from "@/lib/toast"
+import { SCALE_IN, FADE_IN } from "@/lib/animations"
 
 interface UploadDropZoneProps {
   /** Called with the validated file when ready to proceed to metadata modal */
@@ -127,10 +128,10 @@ export function UploadDropZone({ onFileReady, uploading = false, className }: Up
         {isDragging ? (
           <motion.div
             key="drag-icon"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            variants={SCALE_IN}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="flex flex-col items-center gap-2"
           >
             <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center">
@@ -139,7 +140,7 @@ export function UploadDropZone({ onFileReady, uploading = false, className }: Up
             <p className="text-sm font-semibold text-accent">Drop to upload</p>
           </motion.div>
         ) : (
-          <motion.div key="default-icon" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
+          <motion.div key="default-icon" variants={FADE_IN} initial="hidden" animate="visible" className="flex flex-col items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-bg-tertiary border border-border-primary flex items-center justify-center">
               <FileText className="w-6 h-6 text-text-tertiary" aria-hidden="true" />
             </div>

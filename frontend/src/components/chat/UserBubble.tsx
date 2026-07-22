@@ -1,6 +1,8 @@
 "use client"
 
+import { motion } from "motion/react"
 import { cn } from "@/lib/utils"
+import { CHAT_MESSAGE } from "@/lib/animations"
 import type { ChatMessage } from "@/types"
 
 interface UserBubbleProps {
@@ -24,7 +26,14 @@ export function UserBubble({ message, className }: UserBubbleProps) {
   }).format(new Date(message.timestamp))
 
   return (
-    <div className={cn("flex flex-col items-end gap-1 group", className)} role="listitem">
+    <motion.div
+      className={cn("flex flex-col items-end gap-1 group", className)}
+      custom="user"
+      variants={CHAT_MESSAGE}
+      initial="hidden"
+      animate="visible"
+      role="listitem"
+    >
       <div
         className={cn(
           "max-w-[85%] rounded-2xl rounded-tr-sm",
@@ -40,6 +49,6 @@ export function UserBubble({ message, className }: UserBubbleProps) {
       <span className="text-xs text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity pr-1" aria-label={`Sent at ${time}`}>
         {time}
       </span>
-    </div>
+    </motion.div>
   )
 }

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { ChevronDown, FileText, PenLine, CheckCircle2, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { GAP_EXPAND } from "@/lib/animations"
 import type { GapEntry } from "@/hooks/queries/adminData"
 
 type Severity = "high" | "medium" | "low"
@@ -80,10 +81,10 @@ export function GapCard({ entry, onHide }: GapCardProps) {
           <AnimatePresence>
             {expanded && (
               <motion.ul
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                variants={GAP_EXPAND}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
                 className="overflow-hidden space-y-1 mt-2"
               >
                 {entry.example_queries.map((q, i) => (

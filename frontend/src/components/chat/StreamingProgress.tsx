@@ -1,8 +1,9 @@
 "use client"
 
-import { motion, AnimatePresence, useReducedMotion } from "motion/react"
+import { motion, AnimatePresence } from "motion/react"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { STREAMING_STAGE } from "@/lib/animations"
 import type { StreamingState } from "@/types"
 
 interface StreamingProgressProps {
@@ -26,7 +27,6 @@ const STATE_LABELS: Partial<Record<StreamingState, string>> = {
  * <StreamingProgress state={streamingState} />
  */
 export function StreamingProgress({ state, className }: StreamingProgressProps) {
-  const reducedMotion = useReducedMotion()
   const label = STATE_LABELS[state]
 
   return (
@@ -34,10 +34,10 @@ export function StreamingProgress({ state, className }: StreamingProgressProps) 
       {label && (
         <motion.div
           key={state}
-          initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
+          variants={STREAMING_STAGE}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
           className={cn("flex items-center gap-2", "text-xs text-text-tertiary", className)}
           role="status"
           aria-live="polite"

@@ -3,7 +3,7 @@
 import { motion } from "motion/react"
 import { ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { usePrefersReducedMotion } from "@/hooks/useMediaQuery"
+import { CONTAINER_STAGGER, FADE_UP } from "@/lib/animations"
 
 interface RelatedQuestionsProps {
   questions: string[]
@@ -16,6 +16,10 @@ interface RelatedQuestionsProps {
  * Backend generates 2-3 related questions based on the answer context.
  * Clicking a chip pre-fills and sends that question.
  *
+ * Each chip fades/slides up individually, staggered by CONTAINER_STAGGER's
+ * 40ms — per FRONTEND_23's component table ("RelatedQuestions chips |
+ * CONTAINER_STAGGER + FADE_UP per chip").
+ *
  * @example
  * <RelatedQuestions
  *   questions={["How do I check stock with MMBE?", "What is safety stock?"]}
@@ -23,22 +27,21 @@ interface RelatedQuestionsProps {
  * />
  */
 export function RelatedQuestions({ questions, onSelect, className }: RelatedQuestionsProps) {
-  const reducedMotion = usePrefersReducedMotion()
-
   if (!questions.length) return null
 
   return (
     <motion.div
       className={cn("flex flex-wrap gap-2", className)}
-      initial={reducedMotion ? {} : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, delay: 0.2 }}
+      variants={CONTAINER_STAGGER}
+      initial="hidden"
+      animate="visible"
       role="group"
       aria-label="Related questions"
     >
       {questions.slice(0, 3).map((question, i) => (
-        <button
+        <motion.button
           key={i}
+          variants={FADE_UP}
           onClick={() => onSelect(question)}
           className={cn(
             "flex items-center gap-1.5",
@@ -54,7 +57,7 @@ export function RelatedQuestions({ questions, onSelect, className }: RelatedQues
         >
           <span className="truncate">{question}</span>
           <ArrowRight className="w-3 h-3 shrink-0 opacity-60" aria-hidden="true" />
-        </button>
+        </motion.button>
       ))}
     </motion.div>
   )

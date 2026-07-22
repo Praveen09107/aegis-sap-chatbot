@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence, motion } from "motion/react"
 import { X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { OnboardingProgress } from "./OnboardingProgress"
 import { OnboardingStep, ONBOARDING_STEPS } from "./OnboardingStep"
 import { cn } from "@/lib/utils"
+import { ONBOARDING_STEP } from "@/lib/animations"
 import { useChatStore } from "@/stores/chatStore"
 
 interface OnboardingModalProps {
@@ -34,7 +35,6 @@ interface OnboardingModalProps {
 export function OnboardingModal({ open, onComplete }: OnboardingModalProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [direction, setDirection] = useState<1 | -1>(1)
-  const reducedMotion = useReducedMotion()
   const setComposeValue = useChatStore((s) => s.setComposeValue)
 
   const totalSteps = ONBOARDING_STEPS.length
@@ -83,22 +83,6 @@ export function OnboardingModal({ open, onComplete }: OnboardingModalProps) {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowRight" || e.key === "ArrowDown") goNext()
     if (e.key === "ArrowLeft" || e.key === "ArrowUp") goPrev()
-  }
-
-  // Slide variants for step transitions
-  const slideVariants = {
-    enter: (dir: number) => ({
-      x: reducedMotion ? 0 : dir * 40,
-      opacity: 0,
-    }),
-    center: {
-      x: 0,
-      opacity: 1,
-    },
-    exit: (dir: number) => ({
-      x: reducedMotion ? 0 : dir * -40,
-      opacity: 0,
-    }),
   }
 
   if (!open) return null
@@ -150,11 +134,10 @@ export function OnboardingModal({ open, onComplete }: OnboardingModalProps) {
             <motion.div
               key={currentStep}
               custom={direction}
-              variants={slideVariants}
+              variants={ONBOARDING_STEP}
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: reducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
             >
               <div id="onboarding-title" className="sr-only">
                 Step {currentStep + 1} of {totalSteps}: {step.title}

@@ -5,7 +5,7 @@ import { motion } from "motion/react"
 import { MessageSquare, Calendar } from "lucide-react"
 import { cn, formatDateLocalized } from "@/lib/utils"
 import { ConfidenceBadge } from "@/components/chat/ConfidenceBadge"
-import { usePrefersReducedMotion } from "@/hooks/useMediaQuery"
+import { FADE_UP } from "@/lib/animations"
 import type { Session } from "@/types"
 
 interface HistorySessionCardProps {
@@ -20,7 +20,6 @@ interface HistorySessionCardProps {
  */
 export function HistorySessionCard({ session, index }: HistorySessionCardProps) {
   const router = useRouter()
-  const reducedMotion = usePrefersReducedMotion()
 
   const date = formatDateLocalized(session.updated_at)
 
@@ -30,8 +29,9 @@ export function HistorySessionCard({ session, index }: HistorySessionCardProps) 
 
   return (
     <motion.div
-      initial={reducedMotion ? {} : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
+      variants={FADE_UP}
+      initial="hidden"
+      animate="visible"
       transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.3) }}
     >
       <button

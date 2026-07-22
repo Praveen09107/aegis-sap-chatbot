@@ -7,6 +7,7 @@ import { UserBubble } from "./UserBubble"
 import { AIResponseBubble } from "./AIResponseBubble"
 import { ChatEmptyState } from "./ChatEmptyState"
 import { cn } from "@/lib/utils"
+import { FADE_UP } from "@/lib/animations"
 import { usePrefersReducedMotion } from "@/hooks/useMediaQuery"
 import type { ChatMessage, StreamingState } from "@/types"
 
@@ -126,10 +127,10 @@ export function MessageList({
       <AnimatePresence>
         {showScrollButton && (
           <motion.button
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.15 }}
+            variants={FADE_UP}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             onClick={() => scrollToBottom()}
             className={cn(
               "absolute bottom-4 right-4 z-sticky",

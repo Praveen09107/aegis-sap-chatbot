@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence, useReducedMotion } from "motion/react"
+import { motion, AnimatePresence } from "motion/react"
 import { X, Keyboard } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { FADE_IN, SCALE_IN } from "@/lib/animations"
 import { useAuth } from "@/hooks/useAuth"
 
 interface ShortcutEntry {
@@ -39,7 +40,6 @@ const ADMIN_SHORTCUTS: ShortcutEntry[] = [
 export function KeyboardShortcutsOverlay() {
   const [open, setOpen] = useState(false)
   const { isAdmin } = useAuth()
-  const reducedMotion = useReducedMotion()
 
   // Listen for open event from CommandPalette
   useEffect(() => {
@@ -81,10 +81,10 @@ export function KeyboardShortcutsOverlay() {
           {/* Backdrop */}
           <motion.div
             key="shortcuts-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reducedMotion ? 0 : 0.15 }}
+            variants={FADE_IN}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="fixed inset-0 z-overlay bg-black/50 backdrop-blur-sm"
             onClick={() => setOpen(false)}
             aria-hidden="true"
@@ -93,10 +93,10 @@ export function KeyboardShortcutsOverlay() {
           {/* Panel */}
           <motion.div
             key="shortcuts-panel"
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
-            transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+            variants={SCALE_IN}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className={cn(
               "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
               "z-modal w-full max-w-lg mx-4",

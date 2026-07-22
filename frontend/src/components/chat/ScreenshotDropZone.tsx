@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { cn } from "@/lib/utils"
 import { LIMITS } from "@/lib/constants"
 import { toastError } from "@/lib/toast"
+import { FADE_IN } from "@/lib/animations"
 
 interface ScreenshotDropZoneProps {
   onFileAccepted: (file: File) => void
@@ -78,10 +79,10 @@ export function ScreenshotDropZone({ onFileAccepted, children, className }: Scre
       <AnimatePresence>
         {isDragging && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            variants={FADE_IN}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className={cn(
               "absolute inset-0 z-overlay",
               "flex flex-col items-center justify-center gap-3",

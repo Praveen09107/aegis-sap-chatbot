@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { motion, useReducedMotion } from "motion/react"
+import { motion } from "motion/react"
 import { AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { CHAT_MESSAGE, FADE_UP } from "@/lib/animations"
 import Image from "next/image"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { ConfidenceBadge } from "./ConfidenceBadge"
@@ -61,7 +62,6 @@ export function AIResponseBubble({
   className,
 }: AIResponseBubbleProps) {
   const [feedbackGiven, setFeedbackGiven] = useState<"positive" | "negative" | null>(null)
-  const reducedMotion = useReducedMotion()
 
   const isStreaming = ["thinking", "retrieving", "generating", "streaming", "validating"].includes(streamingState)
   const badge = message.confidenceBadge
@@ -91,9 +91,10 @@ export function AIResponseBubble({
   return (
     <motion.div
       className={cn("flex flex-col items-start gap-1.5 group", className)}
-      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      custom="assistant"
+      variants={CHAT_MESSAGE}
+      initial="hidden"
+      animate="visible"
       role="listitem"
     >
       {/* AEGIS identity row */}
@@ -174,8 +175,9 @@ export function AIResponseBubble({
       {!isStreaming && (badge || attrRef) && (
         <motion.div
           className="flex items-center flex-wrap gap-2 pl-0.5"
-          initial={reducedMotion ? {} : { opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
+          variants={FADE_UP}
+          initial="hidden"
+          animate="visible"
           transition={{ duration: 0.25, delay: 0.1 }}
         >
           {badge && <ConfidenceBadge badge={badge} score={score} showScore showTooltip />}

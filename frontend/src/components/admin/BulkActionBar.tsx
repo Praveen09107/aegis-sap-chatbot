@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { SLIDE_UP_FROM_BOTTOM } from "@/lib/animations"
 
 interface BulkAction {
   label: string
@@ -40,10 +41,10 @@ export function BulkActionBar({ selectedCount, actions, onClearSelection, classN
     <AnimatePresence>
       {selectedCount > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 16 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          variants={SLIDE_UP_FROM_BOTTOM}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
           className={cn(
             "fixed bottom-6 left-1/2 -translate-x-1/2 z-sticky",
             "flex items-center gap-3",

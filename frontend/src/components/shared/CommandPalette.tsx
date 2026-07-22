@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import { Command } from "cmdk"
 import { useRouter, usePathname } from "next/navigation"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence, motion } from "motion/react"
 import {
   Search,
   Plus,
@@ -30,6 +30,7 @@ import { useCommandHistory } from "@/hooks/useCommandPalette"
 import { useUIStore } from "@/stores/uiStore"
 import { cn, truncate, formatRelativeDate } from "@/lib/utils"
 import { ADMIN_NAV_ITEMS, LIMITS, STORAGE_KEYS, FEATURES } from "@/lib/constants"
+import { FADE_IN, SCALE_IN } from "@/lib/animations"
 import type { Session } from "@/types"
 
 // ── Command item types ───────────────────────────────────────
@@ -91,7 +92,6 @@ export function CommandPalette({ open, onOpenChange, sessions = [], isAdmin = fa
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const { addToHistory } = useCommandHistory()
-  const reducedMotion = useReducedMotion()
 
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebounce(search, 150)
@@ -209,10 +209,10 @@ export function CommandPalette({ open, onOpenChange, sessions = [], isAdmin = fa
           {/* Backdrop */}
           <motion.div
             key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reducedMotion ? 0 : 0.15 }}
+            variants={FADE_IN}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className="fixed inset-0 z-overlay bg-black/40 backdrop-blur-sm"
             onClick={() => onOpenChange(false)}
             aria-hidden="true"
@@ -221,10 +221,10 @@ export function CommandPalette({ open, onOpenChange, sessions = [], isAdmin = fa
           {/* Palette */}
           <motion.div
             key="palette"
-            initial={reducedMotion ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.97, y: -8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -4 }}
-            transition={{ duration: reducedMotion ? 0 : 0.15, ease: [0.16, 1, 0.3, 1] }}
+            variants={SCALE_IN}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
             className={cn("fixed top-[20%] left-1/2 -translate-x-1/2", "z-command w-full max-w-[560px] mx-4")}
             role="dialog"
             aria-label="Command palette"

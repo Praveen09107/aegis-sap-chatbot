@@ -1,10 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import { usePrefersReducedMotion } from "@/hooks/useMediaQuery"
+import { useCountUp } from "@/hooks/useCountUp"
 
 type MetricColor = "white" | "green" | "amber" | "red" | "info" | "purple"
 type TrendDirection = "up" | "down" | "neutral"
@@ -74,41 +73,17 @@ export function MetricCard({
   isLoading = false,
   className,
 }: MetricCardProps) {
-  const prefersReducedMotion = usePrefersReducedMotion()
-  // Only animated numeric values need local state at all — when not
-  // animating, `value` is rendered directly (see renderedValue below)
-  // rather than syncing a copy into state, which would mean calling
-  // setState unconditionally inside the effect on every non-animated
-  // render (flagged by eslint-plugin-react-hooks v7's
-  // react-hooks/set-state-in-effect rule).
-  const isAnimating = typeof value === "number" && animateCount && !prefersReducedMotion
-  const [animatedValue, setAnimatedValue] = useState(0)
-  const animationRef = useRef<number | undefined>(undefined)
-
-  // Count-up animation
-  useEffect(() => {
-    if (!isAnimating) return
-
-    const end = value as number
-    const duration = 600
-    const startTime = performance.now()
-
-    function animate(currentTime: number) {
-      const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      // Ease-out cubic
-      const eased = 1 - Math.pow(1 - progress, 3)
-      setAnimatedValue(end * eased)
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animate)
-      }
-    }
-
-    animationRef.current = requestAnimationFrame(animate)
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
-  }, [value, isAnimating])
+  // useCountUp checks prefers-reduced-motion internally — MetricCard only
+  // needs to gate on the value actually being numeric and animateCount
+  // being requested. When not animating, `value` is read directly (see
+  // displayValue below) rather than the hook's output, so a non-animating
+  // card never risks a "0" flash from the hook's own initial state.
+  const isAnimating = typeof value === "number" && animateCount
+  const animatedValue = useCountUp({
+    target: typeof value === "number" ? value : 0,
+    duration: 600,
+    enabled: isAnimating,
+  })
 
   const displayValue = isAnimating ? animatedValue : value
 

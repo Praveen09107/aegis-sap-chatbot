@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next"
+import { MotionConfig } from "motion/react"
 import { geist, geistMono } from "./fonts"
 import { orgName } from "@/lib/constants"
 import { ThemeProvider } from "@/components/shared/providers/ThemeProvider"
@@ -47,7 +48,15 @@ export default function RootLayout({ children }: RootLayoutProps) {
           storageKey="aegis:dark-mode"
         >
           <QueryProvider>
-            <ToastProvider>{children}</ToastProvider>
+            {/* Global reduced-motion policy for every motion.* element in
+                the app (FRONTEND_23/24) — "user" strips transform/layout
+                animation (x/y/scale/rotate) while keeping opacity
+                transitions active whenever the OS setting is on, so
+                individual components never need their own
+                usePrefersReducedMotion() branch just to get this. */}
+            <MotionConfig reducedMotion="user">
+              <ToastProvider>{children}</ToastProvider>
+            </MotionConfig>
           </QueryProvider>
         </ThemeProvider>
       </body>

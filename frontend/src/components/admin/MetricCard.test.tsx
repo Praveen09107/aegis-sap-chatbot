@@ -36,19 +36,20 @@ describe("MetricCard", () => {
 
   it("animates from 0 up to the target value via requestAnimationFrame", () => {
     let rafCallback: FrameRequestCallback = () => {}
-    let time = 0
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
       rafCallback = cb
       return 1
     })
-    vi.spyOn(window, "performance", "get").mockReturnValue({ now: () => time } as Performance)
 
     render(<MetricCard label="Queries today" value={100} format="integer" animateCount />)
 
     // Immediately after mount, the animated value starts at (or very near) 0.
     expect(screen.getByText("0")).toBeInTheDocument()
 
-    time = 600 // full duration elapsed
+    // useCountUp's tick() lazily captures its own start timestamp from the
+    // first rAF callback invocation, so reaching "full duration elapsed"
+    // needs one tick to establish t=0, then one at t=duration.
+    act(() => rafCallback(0))
     act(() => rafCallback(600))
 
     expect(screen.getByText("100")).toBeInTheDocument()
