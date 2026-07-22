@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { useCountUp } from "@/hooks/useCountUp"
+import { LAYOUT } from "@/lib/constants"
 
 type MetricColor = "white" | "green" | "amber" | "red" | "info" | "purple"
 type TrendDirection = "up" | "down" | "neutral"
@@ -101,9 +102,16 @@ export function MetricCard({
     }
   }
 
+  // Fixed min-height (LAYOUT.ADMIN_METRIC_CARD_HEIGHT) on both the loading
+  // and loaded branches prevents layout shift when a card's skeleton
+  // resolves into its real content — a CLS-prevention requirement from
+  // FRONTEND_28_PERFORMANCE.md.
   if (isLoading) {
     return (
-      <div className={cn("bg-bg-card border border-border-primary rounded-xl p-4", "flex flex-col gap-2", className)}>
+      <div
+        className={cn("bg-bg-card border border-border-primary rounded-xl p-4", "flex flex-col gap-2", className)}
+        style={{ minHeight: LAYOUT.ADMIN_METRIC_CARD_HEIGHT }}
+      >
         <Skeleton className="h-3 w-24" />
         <Skeleton className="h-8 w-16" />
         <Skeleton className="h-2.5 w-28" />
@@ -112,7 +120,10 @@ export function MetricCard({
   }
 
   return (
-    <div className={cn("bg-bg-card border border-border-primary rounded-xl p-4", "flex flex-col gap-1.5", "shadow-sm", className)}>
+    <div
+      className={cn("bg-bg-card border border-border-primary rounded-xl p-4", "flex flex-col gap-1.5", "shadow-sm", className)}
+      style={{ minHeight: LAYOUT.ADMIN_METRIC_CARD_HEIGHT }}
+    >
       {/* Label */}
       <p className="text-xs font-semibold text-text-tertiary uppercase tracking-wider">{label}</p>
 

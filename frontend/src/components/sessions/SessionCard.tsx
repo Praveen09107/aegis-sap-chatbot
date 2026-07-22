@@ -12,6 +12,14 @@ interface SessionCardProps {
   /** True while a response is streaming in a different session — switching mid-stream would abandon it silently. */
   isSelectDisabled?: boolean
   onSelect: () => void
+  /**
+   * Id of this card's date-group header (e.g. "Today"), for aria-describedby.
+   * Only needed when the sidebar's virtualized list mode is active — that
+   * mode can't nest cards inside a `role="group"` wrapper the way the plain
+   * list does, since TanStack Virtual renders each row as an independently
+   * absolutely-positioned sibling.
+   */
+  describedById?: string
 }
 
 /**
@@ -20,7 +28,7 @@ interface SessionCardProps {
  * Active session: white card with left accent border.
  * Hover: reveals pin indicator and context menu trigger.
  */
-export function SessionCard({ session, isActive, isPinned, isSelectDisabled = false, onSelect }: SessionCardProps) {
+export function SessionCard({ session, isActive, isPinned, isSelectDisabled = false, onSelect, describedById }: SessionCardProps) {
   const handleSelect = () => {
     if (!isSelectDisabled) onSelect()
   }
@@ -61,6 +69,7 @@ export function SessionCard({ session, isActive, isPinned, isSelectDisabled = fa
             : !isSelectDisabled && "hover:bg-bg-card hover:border hover:border-border-primary",
         )}
         aria-current={isActive ? "page" : undefined}
+        aria-describedby={describedById}
         aria-label={
           isSelectDisabled
             ? `Session: ${session.topic_summary} (unavailable until the current response completes)`

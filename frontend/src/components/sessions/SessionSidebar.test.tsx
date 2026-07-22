@@ -151,4 +151,51 @@ describe("SessionSidebar", () => {
     expect(items[0]).toHaveTextContent("Older, pinned")
     expect(items[1]).toHaveTextContent("Newer, unpinned")
   })
+
+  describe("virtualization threshold (FRONTEND_28_PERFORMANCE.md, >100 sessions)", () => {
+    // jsdom reports 0 for all layout dimensions by default, which would make
+    // TanStack Virtual compute a 0-height visible range — mock a realistic
+    // sidebar viewport so its range calculation has something real to work with.
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight")
+
+    beforeEach(() => {
+      Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, value: 400 })
+    })
+
+    afterEach(() => {
+      if (originalOffsetHeight) Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight)
+    })
+
+    it("virtualizes and renders far fewer DOM nodes than the real session count once past 100 sessions", () => {
+      const sessions = Array.from({ length: 150 }, (_, i) =>
+        makeSession({ id: `s${i}`, topic_summary: `Session ${i}`, updated_at: "2026-07-19T00:00:00Z" })
+      )
+      render(<SessionSidebar sessions={sessions} />)
+
+      const renderedCards = screen.getAllByRole("listitem")
+      expect(renderedCards.length).toBeGreaterThan(0)
+      expect(renderedCards.length).toBeLessThan(150)
+    })
+
+    it("still renders every session at exactly the threshold (no virtualization until strictly over 100)", () => {
+      const sessions = Array.from({ length: 100 }, (_, i) =>
+        makeSession({ id: `s${i}`, topic_summary: `Session ${i}`, updated_at: "2026-07-19T00:00:00Z" })
+      )
+      render(<SessionSidebar sessions={sessions} />)
+
+      expect(screen.getAllByRole("listitem")).toHaveLength(100)
+    })
+
+    it("each rendered session card is described by its date-group header once virtualized", () => {
+      const sessions = Array.from({ length: 150 }, (_, i) =>
+        makeSession({ id: `s${i}`, topic_summary: `Session ${i}`, updated_at: "2026-07-19T00:00:00Z" })
+      )
+      render(<SessionSidebar sessions={sessions} />)
+
+      const [firstCard] = screen.getAllByRole("listitem")
+      const describedById = firstCard.getAttribute("aria-describedby")
+      expect(describedById).toBeTruthy()
+      expect(document.getElementById(describedById!)).toBeInTheDocument()
+    })
+  })
 })

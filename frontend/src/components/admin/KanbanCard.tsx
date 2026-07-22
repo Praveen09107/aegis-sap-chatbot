@@ -47,12 +47,17 @@ export function KanbanCard({ ticket, onClick }: KanbanCardProps) {
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
         isDragging && "opacity-40 shadow-xl"
       )}
-      role="button"
-      tabIndex={0}
       aria-label={`Ticket ${ticket.ticket_id}: ${ticket.query_text}`}
+      // Merges with listeners.onKeyDown (dnd-kit's own keyboard-sensor
+      // handler) rather than replacing it — {...listeners} alone can't
+      // combine with a later explicit onKeyDown prop since JSX spread just
+      // takes the last value for a given key. Space is dnd-kit's own
+      // pick-up/drop key (handled entirely by listeners.onKeyDown below);
+      // only Enter opens the detail drawer here, so the two don't compete
+      // for the same key.
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
+        listeners?.onKeyDown?.(e)
+        if (e.key === "Enter") {
           onClick(ticket)
         }
       }}

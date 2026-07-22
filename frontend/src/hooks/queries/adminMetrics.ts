@@ -42,6 +42,7 @@ export function useSystemHealth() {
     queryKey: queryKeys.admin.systemHealth(),
     queryFn: () => api.get<SystemHealthData>("admin/system-health"),
     staleTime: 0,
+    gcTime: 60_000,
     refetchInterval: TIMING.ADMIN_POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   })
@@ -59,7 +60,9 @@ export function useReviewQueueCount() {
     queryKey: queryKeys.admin.reviewQueue("pending-count"),
     queryFn: () => api.get<{ count: number }>("admin/review-queue/count", { silent: true }),
     staleTime: 0,
+    gcTime: 60_000,
     refetchInterval: TIMING.ADMIN_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
     select: (data) => data.count,
   })
 }

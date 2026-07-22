@@ -36,7 +36,7 @@ describe("KanbanCard", () => {
     expect(onClick).toHaveBeenCalledWith(ticket)
   })
 
-  it("calls onClick on Enter and Space keydown", async () => {
+  it("calls onClick on Enter keydown", async () => {
     const onClick = vi.fn()
     const user = userEvent.setup()
     const ticket = makeTicket()
@@ -46,9 +46,20 @@ describe("KanbanCard", () => {
     card.focus()
     await user.keyboard("{Enter}")
     expect(onClick).toHaveBeenCalledTimes(1)
+  })
 
+  it("does not call onClick on Space — Space is reserved for dnd-kit's own keyboard pick-up/drop", async () => {
+    // dnd-kit's KeyboardSensor (wired in TicketsKanbanBoard) uses Space to
+    // start/end a keyboard-driven drag; this card's own onKeyDown only
+    // merges in listeners.onKeyDown (a no-op here, outside a DndContext) and
+    // must not also treat Space as "open the drawer".
+    const onClick = vi.fn()
+    const user = userEvent.setup()
+    render(<KanbanCard ticket={makeTicket()} onClick={onClick} />)
+
+    screen.getByRole("button").focus()
     await user.keyboard(" ")
-    expect(onClick).toHaveBeenCalledTimes(2)
+    expect(onClick).not.toHaveBeenCalled()
   })
 
   it("has an accessible label including the ticket id and query text", () => {

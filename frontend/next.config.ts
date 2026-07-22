@@ -1,4 +1,13 @@
 import type { NextConfig } from "next";
+import withBundleAnalyzerInit from "@next/bundle-analyzer";
+
+// @next/bundle-analyzer patches the webpack config, so it produces no
+// report under this project's default Turbopack builder (confirmed:
+// `ANALYZE=true next build` silently does nothing). Use
+// `npm run build:analyze`, which forces `--webpack` for this one run.
+const withBundleAnalyzer = withBundleAnalyzerInit({
+  enabled: process.env.ANALYZE === "true",
+});
 
 const nextConfig: NextConfig = {
   // Dockerfile copies .next/standalone into the runner image — required,
@@ -58,11 +67,14 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: [
       "lucide-react",
-      "framer-motion",
+      // Not "framer-motion" — this project depends on "motion" (imported as
+      // "motion/react"); framer-motion isn't installed at all, so listing it
+      // here optimized nothing.
+      "motion",
       "@radix-ui/react-dialog",
       "@radix-ui/react-dropdown-menu",
     ],
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

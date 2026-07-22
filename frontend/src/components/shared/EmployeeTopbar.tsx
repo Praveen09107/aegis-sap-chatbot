@@ -63,6 +63,13 @@ export function EmployeeTopbar() {
 
       {/* Controls */}
       <div className="flex items-center gap-2">
+        {/* Skip to main content link (a11y) — mirrors AdminTopbar's pattern */}
+        <a
+          href="#employee-main-content"
+          className="sr-only focus:not-sr-only focus:px-3 focus:py-1.5 focus:rounded-lg focus:text-xs focus:bg-bg-secondary focus:text-text-primary focus:ring-2 focus:ring-border-focus"
+        >
+          Skip to chat
+        </a>
         <ThemeToggle size="sm" />
         <UserAvatar role={role} />
       </div>

@@ -59,6 +59,7 @@ export function usePipelineHealth() {
     queryKey: queryKeys.admin.pipelineHealth(),
     queryFn: () => api.get<PipelineHealthData>("api/admin/knowledge-entries/pipeline-health"),
     staleTime: 0,
+    gcTime: 60_000,
     refetchInterval: TIMING.ADMIN_POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   })
@@ -106,6 +107,7 @@ export function useInferenceHealth() {
     queryKey: queryKeys.admin.inferenceHealth(),
     queryFn: () => api.get<InferenceHealthData>("api/admin/inference-health"),
     staleTime: 0,
+    gcTime: 60_000,
     refetchInterval: TIMING.ADMIN_POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   })

@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useCallback } from "react"
+import { useMemo, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { Plus, Search } from "lucide-react"
 import { cn, groupSessionsByDate } from "@/lib/utils"
 import { useDebounce } from "@/hooks/useDebounce"
@@ -9,8 +10,21 @@ import { useSessionStore } from "@/stores/sessionStore"
 import { useChatStore } from "@/stores/chatStore"
 import { SessionCard } from "./SessionCard"
 import { Skeleton } from "@/components/ui/skeleton"
+import { EmptyState } from "@/components/admin/EmptyState"
 import type { Session } from "@/types"
 import { LAYOUT } from "@/lib/constants"
+
+// Above this many sessions, render via TanStack Virtual instead of the plain
+// mapped list (FRONTEND_28_PERFORMANCE.md) — most employees never approach
+// this, so the plain list stays the default path and virtualization only
+// activates for real power users with a large history.
+const VIRTUALIZE_THRESHOLD = 100
+const ESTIMATED_HEADER_ROW_HEIGHT = 32
+const ESTIMATED_SESSION_ROW_HEIGHT = 56
+
+type FlatRow =
+  | { type: "header"; key: string; label: string }
+  | { type: "session"; key: string; session: Session; groupHeaderId: string }
 
 interface SessionSidebarProps {
   sessions: Session[]
@@ -66,6 +80,35 @@ export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarPr
 
   // Group by date label
   const grouped = useMemo(() => groupSessionsByDate(sortedFiltered), [sortedFiltered])
+
+  const shouldVirtualize = sortedFiltered.length > VIRTUALIZE_THRESHOLD
+
+  // Flattened header+session rows for the virtualized path only — TanStack
+  // Virtual positions each row as an independent absolute sibling, so the
+  // plain list's nested `role="group"` wrapper per date-group isn't
+  // representable here; each session row instead carries aria-describedby
+  // pointing at its group header's id.
+  const flatRows = useMemo<FlatRow[]>(() => {
+    if (!shouldVirtualize) return []
+    const rows: FlatRow[] = []
+    for (const [label, groupSessions] of grouped) {
+      const headerId = `session-group-${label.replace(/\s+/g, "-")}`
+      rows.push({ type: "header", key: headerId, label })
+      for (const session of groupSessions) {
+        rows.push({ type: "session", key: session.id, session, groupHeaderId: headerId })
+      }
+    }
+    return rows
+  }, [grouped, shouldVirtualize])
+
+  const scrollParentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: flatRows.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: (index) => (flatRows[index]?.type === "header" ? ESTIMATED_HEADER_ROW_HEIGHT : ESTIMATED_SESSION_ROW_HEIGHT),
+    overscan: 5,
+    enabled: shouldVirtualize,
+  })
 
   const handleNewSession = useCallback(() => {
     resetForNewSession()
@@ -142,6 +185,7 @@ export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarPr
 
       {/* Session list */}
       <div
+        ref={scrollParentRef}
         className="flex-1 overflow-y-auto scrollbar-hide pb-4"
         role="list"
         aria-label="Sessions"
@@ -149,15 +193,40 @@ export function SessionSidebar({ sessions, isLoading = false }: SessionSidebarPr
         {isLoading ? (
           <SessionListSkeleton />
         ) : sortedFiltered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 px-4 text-center">
-            <p className="text-xs text-text-tertiary">
-              {debouncedSearch ? "No sessions match your search" : "No sessions yet"}
-            </p>
-            {!debouncedSearch && (
-              <p className="text-xs text-text-tertiary opacity-60">
-                Start a new chat to begin
-              </p>
-            )}
+          <EmptyState
+            variant="inline"
+            title={debouncedSearch ? "No sessions match your search" : "No sessions yet"}
+            description={debouncedSearch ? undefined : "Start a new chat to begin"}
+          />
+        ) : shouldVirtualize ? (
+          <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = flatRows[virtualRow.index]
+              if (!row) return null
+              return (
+                <div
+                  key={row.key}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  {row.type === "header" ? (
+                    <p id={row.key} className="section-label px-3 py-2">
+                      {row.label}
+                    </p>
+                  ) : (
+                    <SessionCard
+                      session={row.session}
+                      isActive={row.session.id === activeSessionId}
+                      isPinned={pinnedIds.has(row.session.id)}
+                      isSelectDisabled={isStreaming && row.session.id !== activeSessionId}
+                      onSelect={() => handleSessionSelect(row.session.id)}
+                      describedById={row.groupHeaderId}
+                    />
+                  )}
+                </div>
+              )
+            })}
           </div>
         ) : (
           grouped.map(([label, groupSessions]) => (

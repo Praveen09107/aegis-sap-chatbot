@@ -1,11 +1,11 @@
 "use client"
 
 import { useState, useMemo, useCallback } from "react"
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent, type DragEndEvent } from "@dnd-kit/core"
+import dynamic from "next/dynamic"
+import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core"
 import { AdminPageWrapper } from "@/components/admin/AdminPageWrapper"
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader"
-import { KanbanColumn } from "@/components/admin/KanbanColumn"
-import { KanbanCard } from "@/components/admin/KanbanCard"
+import { TicketsKanbanBoardSkeleton } from "@/components/admin/TicketsKanbanBoard"
 import { Drawer } from "@/components/ui/drawer"
 import { AdminStatRow } from "@/components/admin/AdminStatRow"
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
@@ -15,6 +15,15 @@ import { formatDateLocalized } from "@/lib/utils"
 import type { TicketEntry } from "@/hooks/queries/adminData"
 
 type TicketStatus = TicketEntry["status"]
+
+// @dnd-kit (~28KB) is only ever used on this one admin route — code split it
+// out via next/dynamic rather than shipping it in every admin bundle
+// (FRONTEND_28_PERFORMANCE.md). ssr:false because dnd-kit's sensors need
+// real pointer/DOM APIs.
+const TicketsKanbanBoard = dynamic(
+  () => import("@/components/admin/TicketsKanbanBoard").then((m) => m.TicketsKanbanBoard),
+  { loading: () => <TicketsKanbanBoardSkeleton />, ssr: false }
+)
 
 const COLUMNS: { id: TicketStatus; title: string }[] = [
   { id: "open", title: "Open" },
@@ -36,9 +45,6 @@ export default function AdminTicketsPage() {
   const { activeTicketId, setActiveTicketId } = useAdminStore()
 
   const [activeId, setActiveId] = useState<string | null>(null)
-
-  // dnd-kit sensors — requires 8px move before drag starts (prevents accidental drags on click)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   // Group tickets by status
   const columns = useMemo(() => {
@@ -109,22 +115,14 @@ export default function AdminTicketsPage() {
 
       {/* Kanban board */}
       <ErrorBoundary section="kanban board">
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div className="grid grid-cols-3 gap-4" role="region" aria-label="Ticket kanban board">
-            {COLUMNS.map(({ id, title }) => (
-              <KanbanColumn key={id} id={id} title={title} tickets={columns[id]} onCardClick={(ticket) => setActiveTicketId(ticket.ticket_id)} />
-            ))}
-          </div>
-
-          {/* Drag overlay — shows floating card while dragging */}
-          <DragOverlay>
-            {activeTicket ? (
-              <div className="rotate-2 opacity-90 shadow-xl">
-                <KanbanCard ticket={activeTicket} onClick={() => {}} />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        <TicketsKanbanBoard
+          columnDefs={COLUMNS}
+          columns={columns}
+          activeTicket={activeTicket}
+          onCardClick={(ticket) => setActiveTicketId(ticket.ticket_id)}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        />
       </ErrorBoundary>
 
       {/* Ticket detail drawer */}

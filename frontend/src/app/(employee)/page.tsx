@@ -20,14 +20,9 @@ import type { ChatMessage } from "@/types"
  *
  * Note: The three-panel layout shell (topbar, sidebar, right panel) is
  * provided by (employee)/layout.tsx — this page only renders the center
- * panel.
- *
- * Onboarding is not wired in here — OnboardingModal doesn't exist yet
- * (FRONTEND_15_EMPLOYEE_ONBOARDING is F10's scope, per
- * FRONTEND_MASTER_REFERENCE's session table). Wiring a first-time-user
- * check to a component that doesn't exist would either be a build error or
- * a fake stub pretending to work — F10 adds both the modal and this page's
- * check together, as one real feature.
+ * panel. Onboarding (OnboardingModal) is also wired at the layout level,
+ * not here, so CommandPalette's "Restart walkthrough" action and this
+ * page share the same uiStore.onboardingVisible source of truth.
  */
 export default function ChatPage() {
   const searchParams = useSearchParams()

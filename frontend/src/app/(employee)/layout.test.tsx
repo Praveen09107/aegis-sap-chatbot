@@ -138,7 +138,7 @@ describe("EmployeeLayout", () => {
       vi.useRealTimers()
     })
 
-    it("shows the onboarding modal after an 800ms delay for a first-time employee", () => {
+    it("shows the onboarding modal after an 800ms delay for a first-time employee", async () => {
       vi.useFakeTimers()
       render(
         <EmployeeLayout>
@@ -148,7 +148,11 @@ describe("EmployeeLayout", () => {
 
       expect(screen.queryByTestId("onboarding-modal")).not.toBeInTheDocument()
       act(() => vi.advanceTimersByTime(800))
-      expect(screen.getByTestId("onboarding-modal")).toBeInTheDocument()
+      // OnboardingModal is code-split via next/dynamic (FRONTEND_28_PERFORMANCE.md),
+      // so its chunk resolves asynchronously once onboardingVisible flips true —
+      // switch to real timers first so findBy's own polling can observe that.
+      vi.useRealTimers()
+      expect(await screen.findByTestId("onboarding-modal")).toBeInTheDocument()
     })
 
     it("does not show onboarding when the completion flag is already set in localStorage", () => {
@@ -185,9 +189,9 @@ describe("EmployeeLayout", () => {
         </EmployeeLayout>
       )
       act(() => vi.advanceTimersByTime(800))
-      expect(screen.getByTestId("onboarding-modal")).toBeInTheDocument()
-
       vi.useRealTimers()
+      expect(await screen.findByTestId("onboarding-modal")).toBeInTheDocument()
+
       const user = userEvent.setup()
       await user.click(screen.getByText("complete onboarding"))
 

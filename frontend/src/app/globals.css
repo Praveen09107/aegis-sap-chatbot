@@ -998,6 +998,9 @@
   /* ── Admin chart card ── */
   .chart-card {
     @apply surface-card p-4 flex flex-col gap-3;
+    /* Fixed min-height prevents CLS when a chart's data resolves and its
+       real dimensions replace the loading skeleton (FRONTEND_28_PERFORMANCE.md). */
+    min-height: 220px;
   }
   .chart-title {
     @apply section-label;

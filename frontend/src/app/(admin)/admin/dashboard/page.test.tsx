@@ -86,11 +86,14 @@ describe("AdminDashboardPage", () => {
     expect(screen.getByLabelText("Open tickets: 5")).toBeInTheDocument()
   })
 
-  it("renders the charts and gap events list with real data", () => {
+  it("renders the charts and gap events list with real data", async () => {
     useAdminMetricsMock.mockReturnValue({ data: makeMetrics(), isLoading: false, dataUpdatedAt: Date.now() })
     render(<AdminDashboardPage />)
 
-    expect(screen.getByText("ValidationScore — 7-day trend")).toBeInTheDocument()
+    // Charts are loaded via next/dynamic (FRONTEND_28_PERFORMANCE.md
+    // bundle-splitting) — their module resolves asynchronously even in
+    // tests, so the first render only has the ChartSkeleton fallback.
+    expect(await screen.findByText("ValidationScore — 7-day trend")).toBeInTheDocument()
     expect(screen.getByText("Confidence distribution — 7 days")).toBeInTheDocument()
     expect(screen.getByText("Retrieval mode breakdown")).toBeInTheDocument()
     expect(screen.getByText("VL150 delivery creation error")).toBeInTheDocument()

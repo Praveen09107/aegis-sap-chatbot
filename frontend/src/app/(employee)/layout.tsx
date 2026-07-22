@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import dynamic from "next/dynamic"
 import { LoadingScreen } from "@/components/shared/LoadingScreen"
 import { OfflineBanner } from "@/components/shared/OfflineBanner"
 import { MultiTabWarningBanner } from "@/components/shared/MultiTabWarningBanner"
@@ -10,7 +11,6 @@ import { SessionSidebar } from "@/components/sessions/SessionSidebar"
 import { AttributionPanelShell } from "@/components/chat/AttributionPanelShell"
 import { CommandPalette } from "@/components/shared/CommandPalette"
 import { KeyboardShortcutsOverlay } from "@/components/shared/KeyboardShortcutsOverlay"
-import { OnboardingModal } from "@/components/onboarding/OnboardingModal"
 import { useAuth } from "@/hooks/useAuth"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useUIStore } from "@/stores/uiStore"
@@ -18,6 +18,14 @@ import { usePanelStore } from "@/stores/panelStore"
 import { useSessions } from "@/hooks/queries"
 import { initMultiTabDetection } from "@/hooks/useWebSocket"
 import { LAYOUT, STORAGE_KEYS, FEATURES } from "@/lib/constants"
+
+// Onboarding is a one-time, first-run flow most sessions never mount — code
+// split it out of the employee portal's initial bundle rather than paying
+// for it on every load (FRONTEND_28_PERFORMANCE.md). No loading fallback:
+// it's only rendered once onboardingVisible flips true, ~800ms after the
+// page is already interactive, so a skeleton would be visible for a
+// fraction of a second for no benefit.
+const OnboardingModal = dynamic(() => import("@/components/onboarding/OnboardingModal").then((m) => m.OnboardingModal), { ssr: false })
 
 export default function EmployeeLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -90,7 +98,7 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
       >
         <SessionSidebar sessions={sessions} />
 
-        <main className="min-w-0 flex flex-col overflow-hidden bg-bg-card">
+        <main id="employee-main-content" className="min-w-0 flex flex-col overflow-hidden bg-bg-card">
           {children}
         </main>
 
@@ -104,7 +112,7 @@ export default function EmployeeLayout({ children }: { children: React.ReactNode
         isAdmin={false}
       />
       <KeyboardShortcutsOverlay />
-      <OnboardingModal open={onboardingVisible} onComplete={handleOnboardingComplete} />
+      {onboardingVisible && <OnboardingModal open={onboardingVisible} onComplete={handleOnboardingComplete} />}
     </div>
   )
 }

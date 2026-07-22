@@ -72,4 +72,9 @@ describe("EmployeeTopbar", () => {
     render(<EmployeeTopbar />)
     expect(screen.queryByText(/Sona Comstar/i)).not.toBeInTheDocument()
   })
+
+  it("includes a skip-to-chat link targeting the main content id (FRONTEND_27_ACCESSIBILITY.md)", () => {
+    render(<EmployeeTopbar />)
+    expect(screen.getByText("Skip to chat")).toHaveAttribute("href", "#employee-main-content")
+  })
 })

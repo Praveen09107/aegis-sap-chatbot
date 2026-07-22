@@ -2,12 +2,14 @@
 
 import { AdminPageWrapper } from "@/components/admin/AdminPageWrapper"
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader"
-import { ValidationScoreChart } from "@/components/admin/charts/ValidationScoreChart"
-import { ConfidenceDistChart } from "@/components/admin/charts/ConfidenceDistChart"
-import { QueryVolumeChart } from "@/components/admin/charts/QueryVolumeChart"
-import { CachePerformanceChart } from "@/components/admin/charts/CachePerformanceChart"
-import { TopModulesChart } from "@/components/admin/charts/TopModulesChart"
-import { RetrievalModeChart } from "@/components/admin/charts/RetrievalModeChart"
+import {
+  ValidationScoreChart,
+  ConfidenceDistChart,
+  QueryVolumeChart,
+  CachePerformanceChart,
+  TopModulesChart,
+  RetrievalModeChart,
+} from "@/components/admin/charts"
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useAdminAnalytics } from "@/hooks/queries"
 import { useAdminStore } from "@/stores/adminStore"
