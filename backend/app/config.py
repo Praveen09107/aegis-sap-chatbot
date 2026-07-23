@@ -110,7 +110,10 @@ VAULT_URL = os.getenv("VAULT_URL", "http://aegis-vault:8200")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "")
 VAULT_ROLE_ID = os.getenv("VAULT_ROLE_ID", "")
 VAULT_SECRET_ID = os.getenv("VAULT_SECRET_ID", "")
-VAULT_POSTGRES_ROLE = "aegis-operational-role"  # from scripts/setup_vault.py
+# KV v2 path (under the "secret/" mount) where scripts/setup_vault.py seeds
+# the 5 external inference-provider API keys — see config_inference_chains.py.
+VAULT_PROVIDER_KEYS_PATH = "aegis/inference-provider-keys"
+VAULT_KEY_REFRESH_INTERVAL_SECONDS = 60
 
 # Ollama model endpoints (from AEGIS_CONFIGURATION_CONSTANTS.md Section 29)
 OLLAMA_MAIN_URL = os.getenv("OLLAMA_MAIN_URL", "http://aegis-ollama-main:11434")

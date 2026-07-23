@@ -3,24 +3,51 @@
 AEGIS Vault Setup Script
 Configures Vault dev mode with:
 - AppRole authentication for FastAPI and ARQ worker
-- Dynamic PostgreSQL credentials engine
+- Dynamic PostgreSQL credentials engine (legacy — see note below)
 - Transit Secrets Engine for field encryption
 - PKI Secrets Engine for mTLS certificates (demo configuration)
+- KV v2 secrets engine, seeded with the 5 external inference-provider API
+  keys (DEC-060/DEC-061/OPEN-14's chosen Vault repurpose direction)
 
 Vault is running in dev mode: auto-unsealed, root token = aegis-dev-root-token
 
+NOTE on the Database Secrets Engine below: DEC-051's PgBouncer fix replaced
+dynamic Vault-issued Postgres credentials with a static least-privilege role
+(`aegis_pooled_role`) — nothing in the application calls
+`database/creds/aegis-operational-role` any longer. Left provisioned here
+rather than removed (this script's job is to provision Vault, not to decide
+the applicationwide Postgres-auth story), but real, current use of Vault
+starts with the KV v2 setup below.
+
 Usage: python scripts/setup_vault.py
 """
+import os
 import sys
 import time
 import json
 import urllib.request
 import urllib.error
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 VAULT_URL = "http://localhost:8200"
 VAULT_TOKEN = "aegis-dev-root-token"
 POSTGRES_HOST = "aegis-postgres-primary"
 POSTGRES_ADMIN_PASSWORD = "aegis_admin_dev_2024"
+
+# The 5 external inference-provider keys this session's Vault repurpose
+# targets — same env var names config.py already reads via os.getenv, so
+# the KV v2 secret and the .env fallback share one naming scheme.
+PROVIDER_KEY_ENV_VARS = [
+    "GROQ_API_KEY",
+    "CEREBRAS_API_KEY",
+    "SAMBANOVA_API_KEY",
+    "CLOUDFLARE_API_TOKEN",
+    "GEMINI_API_KEY",
+]
+PROVIDER_KEYS_PATH = "aegis/inference-provider-keys"
 
 
 def vault_request(method: str, path: str, body=None):
@@ -35,7 +62,7 @@ def vault_request(method: str, path: str, body=None):
         return json.loads(content) if content else {}
     except urllib.error.HTTPError as e:
         content = e.read().decode()
-        if e.code == 400 and ("already exists" in content or "already enabled" in content):
+        if e.code == 400 and ("already exists" in content or "already enabled" in content or "already in use" in content):
             return {"already_exists": True}
         raise RuntimeError(f"Vault error {e.code} at {path}: {content[:300]}")
 
@@ -253,6 +280,42 @@ def setup_pki_engine() -> bool:
     return True
 
 
+def setup_kv_engine() -> bool:
+    """
+    Enable a KV v2 secrets engine at 'secret/' (already auto-mounted by
+    Vault's dev mode \u2014 confirmed live via GET /sys/mounts, "secret/":
+    {"type": "kv", "options": {"version": "2"}} \u2014 this call is a no-op then,
+    but still issued explicitly so this script provisions correctly against
+    a real, non-dev Vault too, not just this project's dev-mode instance)
+    and seed it with the 5 external inference-provider keys, read from
+    whatever's currently in this script's own environment (i.e. .env's
+    current values via load_dotenv() above) so a fresh Vault starts in sync
+    with today's source of truth rather than empty.
+    """
+    print("\nSetting up KV v2 secrets engine...")
+
+    result = vault_request("POST", "/sys/mounts/secret", {"type": "kv-v2"})
+    if result.get("already_exists"):
+        print("  \u2713 KV v2 engine already enabled at secret/")
+    else:
+        print("  \u2713 KV v2 engine enabled at secret/")
+
+    keys = {name: os.environ.get(name, "") for name in PROVIDER_KEY_ENV_VARS}
+    missing = [name for name, value in keys.items() if not value]
+    if missing:
+        print(
+            f"  \u26a0 No value in this script's environment for: {', '.join(missing)} "
+            f"\u2014 writing empty string for now; rotate in with a real value via "
+            f"`vault kv put secret/{PROVIDER_KEYS_PATH} <NAME>=<value> ...` or the app's rotation flow."
+        )
+
+    vault_request("POST", f"/secret/data/{PROVIDER_KEYS_PATH}", {"data": keys})
+    print(f"  \u2713 Inference-provider keys written to secret/{PROVIDER_KEYS_PATH}")
+    print(f"    Keys present: {', '.join(name for name, value in keys.items() if value) or '(none)'}")
+
+    return True
+
+
 def main():
     print("=" * 60)
     print("AEGIS Vault Setup (Dev Mode)")
@@ -266,6 +329,7 @@ def main():
     setup_database_engine()
     setup_transit_engine()
     setup_pki_engine()
+    setup_kv_engine()
 
     print("\n" + "=" * 60)
     print("\u2713 VAULT SETUP COMPLETE")

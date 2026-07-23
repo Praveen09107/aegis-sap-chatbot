@@ -83,9 +83,11 @@ export type WebSocketMessageType =
   | "validation_result"
   | "vision_refined_answer"
   | "error"
-  | "correction"
   | "session_ready"
   | "pong";
+  // "correction" removed — never implemented by the real Tier 3 judge (numeric
+  // scores only, no free-text correction content) and fully covered by
+  // validation_result's own answer_text on regeneration. See OPEN-08 / DEC-064.
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;

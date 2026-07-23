@@ -156,7 +156,17 @@ class CircuitBreakerRegistry:
     #   50%-threshold, 30s cooldown) would let several more calls through to an
     #   already-429ing provider before tripping, then reopen inside the same still-
     #   exhausted 60-second window. Trips faster, stays open longer.
-    # sambanova_main/sambanova_judge: 20 RPM/model — same reasoning, less severe.
+    # sambanova_main/sambanova_judge: this override is about actual call failures
+    #   (timeouts/5xx/etc) tripping the circuit — unrelated to and independent of
+    #   the separate SAMBANOVA_RPD_CEILING=20 sliding-window quota gate in
+    #   model_gateway.py/redis_client.py (a *daily*, not per-minute, ceiling —
+    #   `window_seconds=86400` — which SambaNova's requests never reach the
+    #   provider at all once exhausted, so the circuit breaker never even sees
+    #   them). This override's own comment previously and incorrectly said
+    #   "20 RPM/model," conflating the two mechanisms; corrected here (OPEN-06,
+    #   this session). A quicker trip/longer cooldown than the global default
+    #   is still the right call for a fallback-only tier, so the threshold/
+    #   timeout values themselves are unchanged — only the comment was wrong.
     _OVERRIDES: Dict[str, Dict[str, int]] = {
         "gemini_vision": {"failure_threshold": 2, "timeout": 90},
         "sambanova_main": {"failure_threshold": 3, "timeout": 60},

@@ -9,6 +9,7 @@ Middleware execution order (outer to inner = last registered to first registered
   4. Rate Limiting (per-user Redis counter)
   5. Route Handler (business logic)
 """
+import asyncio
 import logging
 import structlog
 from contextlib import asynccontextmanager
@@ -61,9 +62,19 @@ async def lifespan(app: FastAPI):
     from app.middleware.authentication import load_keycloak_public_keys
     await load_keycloak_public_keys()
 
+    # Vault-backed provider-key rotation (DEC-060/DEC-061/OPEN-14) — this
+    # process's own copy of config_inference_chains.INFERENCE_CHAINS is
+    # kept in sync with Vault every VAULT_KEY_REFRESH_INTERVAL_SECONDS,
+    # independent of the ARQ worker's identical loop (see arq_worker.py's
+    # startup hook) since the two are separate processes with separate
+    # module state.
+    from app.config_inference_chains import start_provider_key_refresh_loop
+    provider_key_refresh_task = asyncio.create_task(start_provider_key_refresh_loop())
+
     log.info("AEGIS ready", environment=ENVIRONMENT)
     yield
 
+    provider_key_refresh_task.cancel()
     await redis_session.close()
     await redis_queue.close()
     await arq_client.close()

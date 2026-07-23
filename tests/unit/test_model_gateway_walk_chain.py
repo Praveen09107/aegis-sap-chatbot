@@ -11,7 +11,7 @@ import time
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.services.model_gateway import walk_chain, InferenceChainExhausted
+from app.services.model_gateway import walk_chain, InferenceChainExhausted, get_provider_config
 from app.infrastructure.circuit_breaker import circuit_registry, CircuitState
 
 
@@ -200,3 +200,34 @@ class TestWalkChainVisionRole:
         assert result == "Blue"
         call_kwargs = mock_dispatch.call_args
         assert call_kwargs.args[4] == "ZmFrZQ==" or call_kwargs.kwargs.get("image_b64") == "ZmFrZQ=="
+
+
+class TestGetProviderConfigUsesLiveProviderKeys:
+    """
+    get_provider_config() (the legacy streaming main-reasoning path's tier
+    resolver) used to import GROQ_API_KEY/CEREBRAS_API_KEY as frozen
+    constants — now sources them via config_inference_chains.get_provider_key()
+    so a Vault-side rotation (DEC-060/DEC-061/OPEN-14) reaches this path
+    too, not just walk_chain()'s tier-dict dispatch.
+    """
+
+    def test_tier_1_groq_judge_uses_the_live_groq_key(self):
+        _reset_chain_circuits("judge")
+        with patch("app.services.model_gateway.get_provider_key", return_value="gsk-rotated-live"):
+            config = get_provider_config(tier=1)
+        assert config["provider"] == "groq"
+        assert config["api_key"] == "gsk-rotated-live"
+
+    def test_tier_2_cerebras_main_uses_the_live_cerebras_key(self):
+        _reset_chain_circuits("main")
+        with patch("app.services.model_gateway.get_provider_key", return_value="csk-rotated-live"):
+            config = get_provider_config(tier=2)
+        assert config["provider"] == "cerebras"
+        assert config["api_key"] == "csk-rotated-live"
+
+    def test_local_mode_tiers_carry_no_api_key_regardless(self):
+        with patch("app.services.model_gateway.INFERENCE_MODE", "local"):
+            _reset_chain_circuits("judge")
+            config = get_provider_config(tier=1)
+        assert config["provider"] == "ollama"
+        assert config["api_key"] == ""

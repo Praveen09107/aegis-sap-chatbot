@@ -745,15 +745,7 @@ All WebSocket messages between FastAPI server and browser client are JSON string
 }
 ```
 
-### Server → Client: Correction Message (Tier 3 judge finding)
-```json
-{
-  "type": "correction",
-  "message": "One correction to the above:",
-  "correction_text": "string (the specific correction)",
-  "session_id": "string"
-}
-```
+*(A `"correction"` server→client message type — a short targeted-fix note distinct from the full answer — was documented here originally but never implemented by `IMPL_17_VALIDATION_ENGINE.md`'s real Tier 3 judge call, which only ever produces numeric faithfulness/completeness/relevance scores, never free-text correction content. `validate_with_regeneration()`'s real behavior is a full-answer regeneration, already delivered through the `validation_result` message's `answer_text` field — confirmed to fully cover this case, not a gap. Removed rather than built as unused code; see `DECISIONS_LOG.md` OPEN-08.)*
 
 ### Client → Server: Chat Message
 ```json

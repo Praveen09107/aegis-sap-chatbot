@@ -5,13 +5,22 @@ All task functions registered here with their retry policies.
 
 Start command: python -m arq app.workers.arq_worker.WorkerSettings
 """
+import asyncio
 import logging
 from typing import Any
 
 from arq import func, cron
 from arq.connections import RedisSettings
 
-from app.config import REDIS_QUEUE_URL
+from app.config import REDIS_QUEUE_URL, LOG_LEVEL
+
+# This process never configured a root logging handler (only main.py/FastAPI
+# did) — any logger.info()/warning() anywhere in code that runs inside this
+# worker (e.g. the provider-key refresh loop below) was silently dropped,
+# confirmed while verifying DEC-06x's Vault rotation feature: the identical
+# refresh loop's log lines appeared in aegis-fastapi's logs but never in
+# aegis-arq's, despite running correctly in both processes.
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
 from app.tasks.vision_task import process_vision_task
 from app.tasks.audit_task import write_audit_log
 from app.tasks.feedback_task import run_feedback_diagnosis
@@ -70,6 +79,15 @@ async def startup(ctx: dict):
     await opensearch_client.connect()
     ctx["redis_session"] = redis_session
     ctx["redis_queue"] = redis_queue
+
+    # Vault-backed provider-key rotation (DEC-060/DEC-061/OPEN-14) — this
+    # worker process has its own copy of config_inference_chains module
+    # state, separate from FastAPI's (see main.py's identical loop), so it
+    # needs its own refresh loop for the vision/feedback tasks this worker
+    # runs to see a rotated key without a restart.
+    from app.config_inference_chains import start_provider_key_refresh_loop
+    ctx["provider_key_refresh_task"] = asyncio.create_task(start_provider_key_refresh_loop())
+
     logger.info("ARQ worker ready")
 
 
@@ -79,6 +97,7 @@ async def shutdown(ctx: dict):
     from app.infrastructure.redis_client import redis_session, redis_queue, arq_client
     from app.infrastructure.qdrant_client import qdrant_client
     from app.infrastructure.opensearch_client import opensearch_client
+    ctx["provider_key_refresh_task"].cancel()
     await redis_session.close()
     await redis_queue.close()
     await arq_client.close()

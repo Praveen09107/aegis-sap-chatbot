@@ -63,7 +63,6 @@ export type WSMessageType =
   | "validation_result"
   | "vision_refined_answer"
   | "error"
-  | "correction"
   | "pong"
   | "retrieval_progress"
 

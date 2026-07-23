@@ -28,15 +28,15 @@ from app.config import (
     INFERENCE_MODE,
     OLLAMA_MAIN_URL, OLLAMA_JUDGE_URL,
     MODEL_MAIN_GENERATION, MODEL_JUDGE_CRAG,
-    CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL_MAIN,
-    GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_MAIN, GROQ_MODEL_JUDGE,
+    CEREBRAS_BASE_URL, CEREBRAS_MODEL_MAIN,
+    GROQ_BASE_URL, GROQ_MODEL_MAIN, GROQ_MODEL_JUDGE,
     GENERATION_TIMEOUT_SECONDS, EXTERNAL_INFERENCE_TIMEOUT_SECONDS,
     GENERATION_TEMPERATURE, GENERATION_MAX_TOKENS,
     JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE,
     MAIN_CASCADE_BUDGET_SECONDS, JUDGE_CASCADE_BUDGET_SECONDS, VISION_CASCADE_BUDGET_SECONDS,
     CLOUDFLARE_NEURON_DAILY_CEILING, SAMBANOVA_RPD_CEILING, GEMINI_RPM_CEILING,
 )
-from app.config_inference_chains import INFERENCE_CHAINS
+from app.config_inference_chains import INFERENCE_CHAINS, get_provider_key
 from app.infrastructure.circuit_breaker import circuit_registry
 from app.infrastructure.inference_providers import (
     stream_chat_completion, call_chat_completion, call_vision_completion,
@@ -385,7 +385,7 @@ def get_provider_config(tier: int) -> dict:
     if tier == 1:
         if not cb_groq_judge.is_open:
             return dict(provider="groq", base_url=GROQ_BASE_URL, model=GROQ_MODEL_JUDGE,
-                        api_key=GROQ_API_KEY, max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
+                        api_key=get_provider_key("groq"), max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
                         timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS, cb_name="groq_judge")
         # Degrade to the Tier 2/3 pair per DEC-020 — judge output is short/
         # structured, less sensitive to this capability step-up than main
@@ -393,23 +393,23 @@ def get_provider_config(tier: int) -> dict:
         logger.warning("Tier 1 degraded: groq_judge circuit open, falling back to main-reasoning pair")
         if not cb_cerebras_main.is_open:
             return dict(provider="cerebras", base_url=CEREBRAS_BASE_URL, model=CEREBRAS_MODEL_MAIN,
-                        api_key=CEREBRAS_API_KEY, max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
+                        api_key=get_provider_key("cerebras"), max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
                         timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS, cb_name="cerebras_main")
         elif not cb_groq_main.is_open:
             return dict(provider="groq", base_url=GROQ_BASE_URL, model=GROQ_MODEL_MAIN,
-                        api_key=GROQ_API_KEY, max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
+                        api_key=get_provider_key("groq"), max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
                         timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS, cb_name="groq_main")
         raise RuntimeError("groq_judge, cerebras_main, and groq_main circuits are all open")
 
     else:  # tier in {2, 3}
         if not cb_cerebras_main.is_open:
             return dict(provider="cerebras", base_url=CEREBRAS_BASE_URL, model=CEREBRAS_MODEL_MAIN,
-                        api_key=CEREBRAS_API_KEY, max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
+                        api_key=get_provider_key("cerebras"), max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
                         timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS, cb_name="cerebras_main")
         elif not cb_groq_main.is_open:
             logger.warning("Tier 2/3 fallback: cerebras_main circuit open, using groq_main (same weights)")
             return dict(provider="groq", base_url=GROQ_BASE_URL, model=GROQ_MODEL_MAIN,
-                        api_key=GROQ_API_KEY, max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
+                        api_key=get_provider_key("groq"), max_tokens=GENERATION_MAX_TOKENS, temperature=GENERATION_TEMPERATURE,
                         timeout=EXTERNAL_INFERENCE_TIMEOUT_SECONDS, cb_name="groq_main")
         raise RuntimeError("Both cerebras_main and groq_main circuits are open")
 

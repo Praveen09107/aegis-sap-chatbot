@@ -1,4 +1,9 @@
 """Unit tests for the N-tier inference chain registry (Phase 0)."""
+import copy
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from app.config_inference_chains import INFERENCE_CHAINS
 
 
@@ -66,3 +71,110 @@ class TestChainShape:
         # judge fires on nearly every query, volume matters more than raw
         # capability for the primary tier specifically.
         assert INFERENCE_CHAINS["judge"][0]["model"] == "llama-3.1-8b-instant"
+
+
+@pytest.fixture(autouse=True)
+def _restore_provider_key_state():
+    """
+    get_provider_key/refresh_provider_keys mutate module-level state
+    (_CURRENT_KEYS and INFERENCE_CHAINS's own tier dicts) shared across the
+    whole test session — snapshot and restore both around every test in
+    this file so these tests can't leak state into each other or into
+    unrelated tests elsewhere in the suite that import INFERENCE_CHAINS.
+    """
+    import app.config_inference_chains as cic
+
+    keys_snapshot = dict(cic._CURRENT_KEYS)
+    chains_snapshot = copy.deepcopy(INFERENCE_CHAINS)
+    yield
+    cic._CURRENT_KEYS.clear()
+    cic._CURRENT_KEYS.update(keys_snapshot)
+    for role, chain in chains_snapshot.items():
+        for i, tier in enumerate(chain):
+            INFERENCE_CHAINS[role][i]["api_key"] = tier["api_key"]
+
+
+class TestGetProviderKey:
+    def test_returns_current_value_for_a_known_provider(self):
+        import app.config_inference_chains as cic
+
+        cic._CURRENT_KEYS["GROQ_API_KEY"] = "gsk-current"
+        assert cic.get_provider_key("groq") == "gsk-current"
+
+    def test_returns_empty_string_for_an_unknown_provider(self):
+        import app.config_inference_chains as cic
+
+        assert cic.get_provider_key("not-a-real-provider") == ""
+
+
+class TestRefreshProviderKeys:
+    @pytest.mark.asyncio
+    async def test_updates_current_keys_and_every_matching_tier_from_vault(self):
+        import app.config_inference_chains as cic
+
+        fake_secret = {
+            "GROQ_API_KEY": "gsk-rotated",
+            "CEREBRAS_API_KEY": "csk-rotated",
+            "SAMBANOVA_API_KEY": "snk-rotated",
+            "CLOUDFLARE_API_TOKEN": "cft-rotated",
+            "GEMINI_API_KEY": "gmk-rotated",
+        }
+        mock_vault_client = AsyncMock()
+        mock_vault_client.get_secret.return_value = fake_secret
+
+        with patch("app.infrastructure.vault_client.vault_client", mock_vault_client):
+            await cic.refresh_provider_keys()
+
+        assert cic.get_provider_key("groq") == "gsk-rotated"
+        assert cic.get_provider_key("cerebras") == "csk-rotated"
+        assert cic.get_provider_key("sambanova") == "snk-rotated"
+        assert cic.get_provider_key("cloudflare") == "cft-rotated"
+        assert cic.get_provider_key("gemini") == "gmk-rotated"
+
+        for chain in INFERENCE_CHAINS.values():
+            for tier in chain:
+                env_var = cic._PROVIDER_TO_ENV_VAR.get(tier["provider"])
+                if env_var:
+                    assert tier["api_key"] == fake_secret[env_var]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_env_value_when_vault_is_unreachable(self):
+        import app.config_inference_chains as cic
+
+        original_groq_key = cic.get_provider_key("groq")
+        mock_vault_client = AsyncMock()
+        mock_vault_client.get_secret.side_effect = ConnectionError("Vault unreachable")
+
+        with patch("app.infrastructure.vault_client.vault_client", mock_vault_client):
+            await cic.refresh_provider_keys()  # must not raise
+
+        # Vault outage never takes inference down — current values untouched.
+        assert cic.get_provider_key("groq") == original_groq_key
+
+    @pytest.mark.asyncio
+    async def test_falls_back_per_key_when_vault_omits_one(self):
+        import app.config_inference_chains as cic
+
+        original_gemini_key = cic._ENV_FALLBACK["GEMINI_API_KEY"]
+        mock_vault_client = AsyncMock()
+        mock_vault_client.get_secret.return_value = {"GROQ_API_KEY": "gsk-rotated"}  # missing the other 4
+
+        with patch("app.infrastructure.vault_client.vault_client", mock_vault_client):
+            await cic.refresh_provider_keys()
+
+        assert cic.get_provider_key("groq") == "gsk-rotated"
+        assert cic.get_provider_key("gemini") == original_gemini_key
+
+    @pytest.mark.asyncio
+    async def test_is_a_no_op_in_local_inference_mode(self):
+        import app.config_inference_chains as cic
+
+        original_groq_key = cic.get_provider_key("groq")
+        mock_vault_client = AsyncMock()
+        mock_vault_client.get_secret.return_value = {"GROQ_API_KEY": "gsk-should-not-apply"}
+
+        with patch.object(cic, "INFERENCE_MODE", "local"), patch("app.infrastructure.vault_client.vault_client", mock_vault_client):
+            await cic.refresh_provider_keys()
+
+        mock_vault_client.get_secret.assert_not_called()
+        assert cic.get_provider_key("groq") == original_groq_key

@@ -46,14 +46,21 @@ Each tier entry:
                  CRAG_MAX_TOKENS stays 64 everywhere else) — this is a
                  per-tier floor, not a global widening.
 """
+import asyncio
+import logging
+
 from app.config import (
+    INFERENCE_MODE,
     GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL_MAIN, GROQ_MODEL_JUDGE, GROQ_MODEL_JUDGE_CAPABILITY, GROQ_MODEL_VISION,
     CEREBRAS_API_KEY, CEREBRAS_BASE_URL, CEREBRAS_MODEL_MAIN, CEREBRAS_MODEL_VISION,
     SAMBANOVA_API_KEY, SAMBANOVA_BASE_URL, SAMBANOVA_MODEL_MAIN, SAMBANOVA_MODEL_JUDGE,
     CLOUDFLARE_API_TOKEN, CLOUDFLARE_BASE_URL, CLOUDFLARE_MODEL_MAIN, CLOUDFLARE_MODEL_JUDGE,
     CLOUDFLARE_MODEL_VISION, CLOUDFLARE_MODEL_VISION_2,
     GEMINI_API_KEY, GEMINI_BASE_URL, GEMINI_MODEL_VISION,
+    VAULT_PROVIDER_KEYS_PATH, VAULT_KEY_REFRESH_INTERVAL_SECONDS,
 )
+
+logger = logging.getLogger(__name__)
 
 INFERENCE_CHAINS: dict[str, list[dict]] = {
     # Identical weights (gpt-oss-120b) across all 4 tiers — deliberate
@@ -99,3 +106,103 @@ INFERENCE_CHAINS: dict[str, list[dict]] = {
          "api_key": GEMINI_API_KEY, "cb_name": "gemini_vision", "wire_format": "gemini", "quota_kind": "sliding_window"},
     ],
 }
+
+
+# ============================================================
+# Vault-backed provider-key rotation (DEC-060/DEC-061/OPEN-14 — repurposed
+# Vault KV v2, this session).
+#
+# INFERENCE_CHAINS above is built once, at import time, from config.py's
+# flat os.getenv() constants — the same value for the life of the process.
+# Genuine zero-restart rotation needs the *value actually used at dispatch
+# time* to be able to change without re-importing this module, which a
+# frozen dict entry can't do on its own. The fix: keep every tier dict's
+# "api_key" field exactly as every existing consumer already reads it
+# (model_gateway.py, check_inference_provider_health.py,
+# inference_health_handler.py — none of them need to change), but
+# periodically REFRESH those same dict objects' "api_key" values in place
+# from Vault, falling back to the original .env-sourced constant if Vault
+# is unreachable. A background loop (started from both FastAPI's lifespan
+# and the ARQ worker's startup — model_gateway.py's streaming main-
+# reasoning path and the async vision/feedback tasks run in different
+# processes, each with its own process-local copy of this module) drives
+# the refresh; Vault is never a hard dependency for inference itself.
+_ENV_FALLBACK: dict[str, str] = {
+    "GROQ_API_KEY": GROQ_API_KEY,
+    "CEREBRAS_API_KEY": CEREBRAS_API_KEY,
+    "SAMBANOVA_API_KEY": SAMBANOVA_API_KEY,
+    "CLOUDFLARE_API_TOKEN": CLOUDFLARE_API_TOKEN,
+    "GEMINI_API_KEY": GEMINI_API_KEY,
+}
+
+_PROVIDER_TO_ENV_VAR: dict[str, str] = {
+    "groq": "GROQ_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "sambanova": "SAMBANOVA_API_KEY",
+    "cloudflare": "CLOUDFLARE_API_TOKEN",
+    "gemini": "GEMINI_API_KEY",
+}
+
+# Seeded from the .env-sourced constants so get_provider_key() is correct
+# from the very first call, before any refresh has ever run.
+_CURRENT_KEYS: dict[str, str] = dict(_ENV_FALLBACK)
+
+
+def get_provider_key(provider: str) -> str:
+    """
+    Current best-known API key/token for a provider — used by
+    model_gateway.py's streaming main-reasoning path, which (unlike
+    walk_chain()'s tier-dict dispatch) references provider keys directly
+    rather than through an INFERENCE_CHAINS entry.
+    """
+    env_var = _PROVIDER_TO_ENV_VAR.get(provider)
+    if env_var is None:
+        return ""
+    return _CURRENT_KEYS.get(env_var, "")
+
+
+async def refresh_provider_keys() -> None:
+    """
+    Re-fetch the 5 provider keys from Vault and update both _CURRENT_KEYS
+    and every INFERENCE_CHAINS tier dict's "api_key" field in place. Falls
+    back to the original .env-sourced value per-key if Vault is
+    unreachable or a key is missing from the secret — Vault is an
+    enhancement (rotation without a restart), never a hard dependency: a
+    Vault outage must never be able to take inference down.
+    """
+    if INFERENCE_MODE != "external":
+        return  # local mode (Ollama) needs none of these keys
+
+    from app.infrastructure.vault_client import vault_client
+
+    try:
+        secret = await vault_client.get_secret(VAULT_PROVIDER_KEYS_PATH)
+    except Exception as e:
+        logger.warning(f"Provider-key refresh: Vault unreachable, keeping current values ({e})")
+        return
+
+    for env_var in _ENV_FALLBACK:
+        new_value = secret.get(env_var) or _ENV_FALLBACK[env_var]
+        if new_value != _CURRENT_KEYS.get(env_var):
+            logger.info(f"Provider-key refresh: {env_var} updated from Vault")
+        _CURRENT_KEYS[env_var] = new_value
+
+    for chain in INFERENCE_CHAINS.values():
+        for tier in chain:
+            env_var = _PROVIDER_TO_ENV_VAR.get(tier["provider"])
+            if env_var:
+                tier["api_key"] = _CURRENT_KEYS[env_var]
+
+
+async def start_provider_key_refresh_loop() -> None:
+    """
+    Runs refresh_provider_keys() once immediately, then every
+    VAULT_KEY_REFRESH_INTERVAL_SECONDS — started as a background asyncio
+    task from both app/main.py's lifespan and app/workers/arq_worker.py's
+    startup hook, so a Vault-side key rotation reaches both the
+    synchronous chat-serving process and the async task-worker process
+    within one interval, no container restart needed.
+    """
+    while True:
+        await refresh_provider_keys()
+        await asyncio.sleep(VAULT_KEY_REFRESH_INTERVAL_SECONDS)
