@@ -34,6 +34,25 @@ export interface AttributionPanel {
     verified_date: string
   }>
   confidence_badge: ConfidenceBadge
+  /**
+   * Confirmed (2026-07-23, F19) against the real backend
+   * (validation_engine.py's build_attribution_panel): already live, not
+   * aspirational — null when the answer's primary source is a document
+   * chunk rather than a Quick Entry chunk.
+   */
+  form_entry_id: string | null
+  /** Screenshots attached to any retrieved chunk (not just the primary source), deduped, max 5. */
+  screenshots: ScreenshotReference[]
+}
+
+/** A Quick Entry screenshot as surfaced to the employee via the attribution panel. */
+export interface ScreenshotReference {
+  /** Proxy URL — /api/screenshots/{path} — never a direct MinIO URL. */
+  url: string
+  /** Admin-written description of the screenshot content. */
+  caption: string
+  /** The chunk_type this screenshot is associated with, e.g. "cause_1". */
+  section: string
 }
 
 // ── WebSocket message types ──
@@ -250,4 +269,335 @@ export interface AuditFilters {
   confidence_badge?: ConfidenceBadge
   page?: number
   page_size?: number
+}
+
+// ── Quick Entry ──
+// Field names and shapes confirmed directly (2026-07-23, F19) against the
+// real backend: backend/app/models/quick_entry.py (row + form_data
+// dataclasses), backend/app/handlers/knowledge_entries_handler.py (endpoint
+// response shapes), backend/app/services/form_validator.py (validation
+// rules). Where FRONTEND_36-38's own pseudocode assumed a shape that
+// doesn't match the real backend, the real backend wins.
+
+export type QuickEntryContentType = "error_guide" | "procedure" | "config"
+
+export type QuickEntryStatus =
+  | "draft"
+  | "processing"
+  | "active"
+  | "archived"
+  | "low_quality"
+  | "failed"
+  | "partial_index"
+  | "review_required"
+
+export interface FeedbackSummary {
+  positive: number
+  negative: number
+  net: number
+  period_days: number
+  last_negative_at: string | null
+}
+
+export interface QuickEntryListItem {
+  id: string
+  document_id: string
+  content_type: QuickEntryContentType
+  module: string
+  status: QuickEntryStatus
+  version: number
+  verified_by_name: string
+  verified_date: string
+  /** Raw Keycloak sub claim — no users table exists to resolve a display name. */
+  submitted_by_name: string
+  chunk_count: number
+  screenshot_count: number
+  has_failed_screenshots: boolean
+  next_review_date: string | null
+  gap_id: string | null
+  feedback_summary: FeedbackSummary
+  issue_title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface QuickEntryListResponse {
+  entries: QuickEntryListItem[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+// ── form_data payloads — exact match to backend/app/models/quick_entry.py ──
+
+export type CausePriority = "check_first" | "common" | "less_common" | "rare"
+
+export interface CauseBlock {
+  /** 1-based, always recomputed from array position — never trusted from input. */
+  cause_number: number
+  priority: CausePriority
+  cause_description: string
+  how_to_identify: string
+  resolution_steps: string
+  resolution_requires_admin: boolean
+  cause_obsolete: boolean
+  /** Required (min 10 chars) if cause_obsolete is true. */
+  obsolete_reason: string
+  screenshot_ids: string[]
+  /** Suppresses the resolution_steps specificity warning once dismissed. */
+  specificity_acknowledged: boolean
+}
+
+export interface ErrorGuideFormData {
+  issue_description: string
+  /** Exact code, or the literal string "NONE" — never shown to the employee. */
+  error_code: string
+  error_message: string
+  description: string
+  when_this_occurs: string
+  causes: CauseBlock[]
+  success_indicator: string
+  escalation_criteria: string
+  admin_steps: string
+  notes: string
+}
+
+export type ProcedureStepType =
+  | "normal"
+  | "branch_start"
+  | "branch_option_a"
+  | "branch_option_b"
+  | "branch_end"
+  | "admin_required"
+
+export interface ProcedureStep {
+  action: string
+  step_type: ProcedureStepType
+  specificity_acknowledged: boolean
+  screenshot_ids: string[]
+  /** Computed by the backend at read time (array index + 1) — never sent by the client. */
+  step_number?: number
+}
+
+export interface CommonError {
+  error_code: string
+  cause_summary: string
+  see_document_id: string
+  reference_validated: boolean
+}
+
+export interface ProcedureFormData {
+  procedure_name: string
+  purpose: string
+  when_to_use: string
+  data_required: string
+  system_conditions: string
+  access_required: string
+  steps: ProcedureStep[]
+  verification: string
+  common_errors: CommonError[]
+  plant_notes: string
+  notes: string
+}
+
+export interface CurrentValueParameter {
+  name: string
+  value: string
+}
+
+export interface CurrentValuesGroup {
+  group_name: string
+  parameters: CurrentValueParameter[]
+}
+
+export interface RelatedError {
+  error_code: string
+  misconfiguration_cause: string
+  see_document_id: string
+  reference_validated: boolean
+}
+
+export type CurrentValuesMode = "structured" | "free_text"
+
+export interface ConfigFormData {
+  configuration_name: string
+  what_this_controls: string
+  access_view: string
+  access_change: string
+  change_frequency: string
+  table_name: string
+  current_values_mode: CurrentValuesMode
+  current_values_structured: CurrentValuesGroup[]
+  current_values_free_text: string
+  how_to_navigate: string
+  related_errors: RelatedError[]
+  notes: string
+}
+
+export type QuickEntryFormData = Partial<ErrorGuideFormData> | Partial<ProcedureFormData> | Partial<ConfigFormData>
+
+// ── processing_log — exact match to IMPL_24 Section 4 ──
+
+export interface ProcessingStageBase {
+  status: string
+  duration_ms: number
+}
+export interface ValidationStage extends ProcessingStageBase {
+  errors: string[]
+}
+export interface ChunkAssemblyStage extends ProcessingStageBase {
+  chunks_assembled: number
+  chunk_types: string[]
+}
+export interface EntityExtractionStage extends ProcessingStageBase {
+  t_codes_found: string[]
+  error_codes_found: string[]
+}
+export interface EmbeddingStage extends ProcessingStageBase {
+  chunks_embedded: number
+  model_used: string
+}
+export interface QualityScoringStage extends ProcessingStageBase {
+  avg_score: number | null
+  threshold_used: number
+  per_chunk_scores: Record<string, number>
+}
+export interface SimilarEntrySummary {
+  document_id: string
+  similarity_score: number
+}
+export interface DeduplicationStage extends ProcessingStageBase {
+  similar_entries: SimilarEntrySummary[]
+}
+export interface QdrantInsertionStage extends ProcessingStageBase {
+  chunks_attempted: number
+  chunks_succeeded: number
+  chunks_failed: number
+  point_ids: Record<string, string>
+  failed_chunk_types: string[]
+}
+export interface OpenSearchIndexingStage extends ProcessingStageBase {
+  docs_attempted: number
+  docs_succeeded: number
+  docs_failed: number
+  failed_chunk_types: string[]
+}
+export interface ScreenshotEnrichmentStage {
+  queued: boolean
+  screenshot_count: number
+  task_id: string | null
+}
+
+export interface ProcessingLogStages {
+  validation?: ValidationStage
+  chunk_assembly?: ChunkAssemblyStage
+  entity_extraction?: EntityExtractionStage
+  embedding?: EmbeddingStage
+  quality_scoring?: QualityScoringStage
+  deduplication?: DeduplicationStage
+  qdrant_insertion?: QdrantInsertionStage
+  opensearch_indexing?: OpenSearchIndexingStage
+  screenshot_enrichment?: ScreenshotEnrichmentStage
+}
+
+export interface ProcessingLog {
+  run_id: string
+  started_at: string
+  entry_id: string
+  entry_version: number
+  stages: ProcessingLogStages
+  overall_status: string
+  retry_count: number
+  completed_at: string | null
+  total_duration_ms: number | null
+  failure_stage: string | null
+  failure_reason: string | null
+  previous_run_ids: string[]
+}
+
+export interface QuickEntryScreenshot {
+  id: string
+  entry_id: string
+  version: number
+  associated_section: string
+  minio_object_key: string
+  admin_caption: string
+  file_size_bytes: number
+  mime_type: string
+  created_at: string
+  extracted_text: string | null
+  vision_status: "pending" | "processing" | "complete" | "failed" | "not_sap"
+  vision_error: string | null
+  /**
+   * Confirmed (knowledge_screenshots_handler.py): always null in practice —
+   * classify_sap() returns a screen-type enum, not a confidence number, and
+   * the real upload endpoint never populates this field with a real value.
+   */
+  vision_confidence: number | null
+  sap_confirmed: boolean
+  eligible_for_cleanup: boolean
+  proxy_url: string
+}
+
+export interface QuickEntryChunkSummary {
+  id: string
+  version: number
+  chunk_type: string
+  qdrant_status: "pending" | "success" | "failed"
+  opensearch_status: "pending" | "success" | "failed"
+  is_current: boolean
+  created_at: string
+}
+
+export interface QuickEntryFull {
+  id: string
+  document_id: string
+  content_type: QuickEntryContentType
+  module: string
+  transactions: string[]
+  status: QuickEntryStatus
+  version: number
+  form_data: QuickEntryFormData
+  verified_by_name: string
+  verified_date: string
+  review_frequency: string | null
+  next_review_date: string | null
+  gap_id: string | null
+  processing_log: ProcessingLog | null
+  submitted_by: string
+  created_at: string
+  updated_at: string
+  screenshots: QuickEntryScreenshot[]
+  chunks: QuickEntryChunkSummary[]
+}
+
+export interface QuickEntryVersion {
+  id: string
+  version: number
+  changed_by_name: string
+  changed_at: string
+  change_summary: string | null
+  verified_by_name: string
+  verified_date: string
+  form_data: QuickEntryFormData
+}
+
+export interface DuplicateMatch {
+  document_id: string
+  title: string
+  source_type: "form_entry" | "document"
+  content_type: string
+  module: string
+  similarity_score: number
+  preview: string
+  last_verified: string
+  status: string
+}
+
+/** A single assembled knowledge chunk, client-side preview (mirrors form_chunker.py's real output shape). */
+export interface AssembledChunk {
+  chunk_type: string
+  text: string
+  associated_section: string
 }

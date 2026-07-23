@@ -5,6 +5,7 @@ import { FileText, ChevronDown, ChevronRight, Calendar, User } from "lucide-reac
 import { cn } from "@/lib/utils"
 import { ScoreBreakdown } from "./ScoreBreakdown"
 import { FreshnessIndicator } from "./FreshnessIndicator"
+import { AttributionScreenshotsSection } from "./AttributionScreenshotsSection"
 import type { AttributionPanel as AttributionPanelType } from "@/types"
 
 interface AttributionPanelProps {
@@ -72,6 +73,8 @@ export function AttributionPanel({ attribution, score, isLoading = false, classN
         <MetaRow icon={User} label={attribution.verified_by} />
         <FreshnessIndicator verifiedDate={attribution.verified_date} />
       </div>
+
+      <AttributionScreenshotsSection screenshots={attribution.screenshots} />
 
       {/* Score breakdown */}
       <ScoreBreakdown score={score} />

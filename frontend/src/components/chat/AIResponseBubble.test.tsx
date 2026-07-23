@@ -49,6 +49,8 @@ describe("AIResponseBubble — completed states", () => {
             verified_date: "2026-06-01",
             secondary_sources: [],
             confidence_badge: "green",
+            form_entry_id: null,
+            screenshots: [],
           },
         }}
         streamingState="complete"

@@ -26,6 +26,8 @@ describe("SessionDocument PDF render (@react-pdf/renderer + React 19 compatibili
         verified_date: "2026-01-01",
         secondary_sources: [],
         confidence_badge: "green",
+        form_entry_id: null,
+        screenshots: [],
       },
     },
   ]

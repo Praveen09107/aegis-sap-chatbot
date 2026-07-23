@@ -1099,6 +1099,31 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 
 ---
 
+### DEC-063 — Quick Entry Screenshots Permanently Orphaned By Every Publish/Restore — Found and Fixed During F19's Residual Manual Check
+
+**Status:** CONFIRMED
+
+**Decision:** F19 (Quick Entry admin UI + employee screenshot attribution) built the full frontend against the real, confirmed `IMPL_23-29` backend contract, then ran the session's own required residual manual check (Part 7: create one real Quick Entry with a real screenshot through the actual built UI-equivalent API calls, confirm it surfaces in a real employee query's attribution panel) rather than assuming success from unit tests alone. That check surfaced a genuine, 100%-reproducible backend defect, unrelated to anything F19's frontend built — the frontend renders screenshots correctly whenever the backend actually returns them.
+
+**Root cause, confirmed by reading the real code, not inferred:** `knowledge_screenshots_handler.py`'s `upload_screenshot` stamps every uploaded screenshot with the entry's *current* `version` at upload time. But `update_entry()`'s publish path (and `restore_version()`) always increments `version` by 1 before re-queuing `process_form_entry`, and that task's chunk-to-screenshot linking query is a strict `WHERE entry_id = $1 AND version = $2`, scoped to the *new* version. A screenshot uploaded while still drafting (version N) can never match chunks indexed after publish (version N+1) — every screenshot uploaded during the normal, single-draft-then-publish workflow (the only workflow the built UI supports, since `ScreenshotUploadZone` requires an existing `entry_id`) is silently and permanently orphaned the moment its entry is first published.
+
+**Verified live, before and after the fix, with a real employee WebSocket query** (same `itadmin1`/`ITAdmin@123` and `employee1`/`Employee@123` credentials `DEC-053`'s addendum established): created a real `error_guide` entry via the real `POST /api/admin/knowledge-entries`, uploaded a real synthetic SAP screenshot via `POST /api/admin/knowledge-screenshots/upload` (vision completed, `vision_status: "complete"`), published it (version 1 → 2, fully processed to `active`, 2 chunks + 2 screenshots on the entry). A real `/ws/chat` query correctly retrieved and cited the entry (`primary_document_id`/`form_entry_id` both correct) — but `attribution_panel.screenshots` came back empty, confirmed to be exactly the version mismatch: the screenshot stayed at `version: 1`, the indexed chunks were `version: 2`. Also verified through the real Next.js layer specifically built by F19 (not just the raw backend): logged in via `/api/auth/login`, hit `/api/proxy/api/admin/knowledge-entries` and the new dedicated `/api/screenshots/[...path]` serving proxy, both worked correctly end-to-end with real httpOnly-cookie-to-Bearer forwarding — confirming the frontend layer was never the problem.
+
+**Fix:** `update_entry()`'s publish branch and `restore_version()` both now re-stamp the screenshots that belonged to the version just superseded, in the same request:
+```sql
+UPDATE knowledge_form_screenshots SET version = $new_version
+WHERE entry_id = $1::uuid AND version = $existing_version
+```
+This is a minimal, in-place carry-forward — the same physical uploads are still the right ones for the content that just became the new current version, and no other feature in this codebase reads or depends on a screenshot's *historical* per-version association (the version-history drawer shows only form_data change summaries, never screenshots). `retry_partial_indexing.py`'s own screenshot lookup (`WHERE entry_id = $1 AND version = $2`, keyed off the entry's *already-current* version at retry time) needed no change — it benefits automatically once upstream publish/restore keep screenshots aligned with the current version.
+
+**Re-verified live after the fix, same method:** a fresh entry, fresh screenshot upload, publish (version 1 → 2) — screenshot correctly re-stamped to `version: 2` matching the chunks, and a real employee query's `attribution_panel.screenshots` returned exactly 1 entry with the correct `url`/`caption`/`section`. Full existing unit suite re-run after the fix: 328 passed, no regressions. Both test entries archived afterward (not left live in the real knowledge base).
+
+**Explicitly a backend fix made during a frontend-scoped session** — the user was asked directly (given `CLAUDE.md` Rule 4 and the project's established "disclose, defer, or fix now" pattern from `DEC-060`'s Vault decision) whether to disclose-and-defer or fix immediately; the user chose to fix it immediately given how directly it undermined the very feature F19 exists to expose. Applied via `docker cp` + `docker restart aegis-fastapi` for live verification (no source bind-mount on this container, matching every prior ad hoc verification in this log); the permanent fix lives in the committed source file for the next real image rebuild.
+
+**Affects:** `backend/app/handlers/knowledge_entries_handler.py` (`update_entry()`, `restore_version()`).
+
+---
+
 # CROSS-REFERENCE INDEX — WHICH DECISION AFFECTS WHICH FILE
 
 | File / Session | Relevant Decisions |
@@ -1114,13 +1139,13 @@ Fixed with a new named volume, `aegis-prometheus-multiproc`, mounted at the same
 | `IMPL_18` | DEC-004, DEC-024, DEC-036 |
 | `IMPL_21`, `IMPL_22` | DEC-025 (historical patch resolution) |
 | `IMPL_23-29` (Quick Entry) | DEC-005, DEC-007, DEC-034, DEC-050, DEC-053, DEC-054, DEC-056, DEC-057 |
-| `IMPL_25` (Quick Entry API endpoints) | DEC-054, DEC-056 (confirm-current, pipeline-health, import-document), DEC-057 (malformed-JSON `400` global handler, bulk-import parser rebuild) |
+| `IMPL_25` (Quick Entry API endpoints) | DEC-054, DEC-056 (confirm-current, pipeline-health, import-document), DEC-057 (malformed-JSON `400` global handler, bulk-import parser rebuild), DEC-063 (`update_entry()`/`restore_version()` screenshot version-orphan fix) |
 | `IMPL_26`, `IMPL_27` (Quick Entry processing pipeline + chunking) | DEC-053, DEC-057 (`chunk_id` retrievability bug, `is_current` retrieval-enforcement gap) |
 | `IMPL_28` specifically (vision + storage) | DEC-034, DEC-055, DEC-057 (Section 5 screenshot-surfacing built for the first time) |
 | `app/clients/ollama_vision.py` (reused, not duplicated, by Quick Entry) | DEC-038, DEC-040, DEC-055 |
 | `IMPL_29` (operational systems: staleness, gaps write-back, rate limiting, bulk import, pipeline health) | DEC-056 |
 | `IMPL_29` Section 3.2 (negative-feedback notifications, `admin_notifications` table) | still not built — genuinely out of scope for every session so far, no future session currently assigned |
-| `FRONTEND_36-40` (Quick Entry UI) | DEC-005 |
+| `FRONTEND_36-40` (Quick Entry UI) | DEC-005, DEC-063 (F19's own residual manual check found and fixed the screenshot version-orphan bug) |
 | `postgres_client.py` | DEC-046, DEC-051, OPEN-09 |
 | `docker-compose.yml` | DEC-014, DEC-024, DEC-051, DEC-052 |
 | `.env` / `.env.example` | DEC-024, DEC-025, DEC-035, DEC-051, DEC-059 (`KEYCLOAK_CLIENT_SECRET` placeholder corrected, OPEN-15), DEC-060 (`KEYCLOAK_CLIENT_ID`, pre-PgBouncer Postgres vars, dead `DATABASE_URL`/`APP_SECRET_KEY` — OPEN-10) |

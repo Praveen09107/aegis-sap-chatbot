@@ -13,6 +13,8 @@ const attribution: AttributionPanelType = {
     { document_id: "SD-PROC-014", chunk_type: "procedure", verified_date: "2026-05-01" },
   ],
   confidence_badge: "green",
+  form_entry_id: null,
+  screenshots: [],
 }
 
 describe("AttributionPanel", () => {

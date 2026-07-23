@@ -7,6 +7,16 @@
 
 import type { SessionFilters, DocFilters, AuditFilters } from "@/types"
 
+interface QuickEntryListParams {
+  search?: string
+  module?: string
+  content_type?: string
+  status?: string
+  include_archived?: boolean
+  page?: number
+  page_size?: number
+}
+
 export const queryKeys = {
   // ── Session history (employee) ──
   sessions: {
@@ -36,5 +46,16 @@ export const queryKeys = {
   // ── User preferences ──
   preferences: {
     all: () => ["preferences"] as const,
+  },
+
+  // ── Quick Entry (admin) ──
+  quickEntry: {
+    all: () => ["quick-entry"] as const,
+    lists: () => ["quick-entry", "list"] as const,
+    list: (params: QuickEntryListParams) => ["quick-entry", "list", params] as const,
+    detail: (id: string) => ["quick-entry", "detail", id] as const,
+    versions: (id: string) => ["quick-entry", "versions", id] as const,
+    feedback: (id: string) => ["quick-entry", "feedback", id] as const,
+    coverage: (query: string, module: string) => ["quick-entry", "coverage", query, module] as const,
   },
 } as const

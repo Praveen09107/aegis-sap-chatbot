@@ -56,6 +56,11 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
   silent?: boolean
 }
 
+interface DeleteOptions extends RequestOptions {
+  /** Optional JSON body — most DELETE endpoints don't need one, but a few require a confirmation payload. */
+  body?: unknown
+}
+
 interface UploadOptions {
   silent?: boolean
   /**
@@ -228,9 +233,17 @@ export const api = {
     return request<T>(path, { ...options, method: "PATCH", body })
   },
 
-  /** HTTP DELETE */
-  delete<T = void>(path: string, options?: RequestOptions): Promise<T> {
-    return request<T>(path, { ...options, method: "DELETE" })
+  /**
+   * HTTP DELETE. A JSON body is optional and rare — the real
+   * DELETE /api/admin/knowledge-entries/:id endpoint requires one, carrying
+   * `confirmed_document_id`. Passed inside `options.body` (a `DeleteOptions`
+   * field, not part of the shared `RequestOptions` GET/POST/etc. use) rather
+   * than as its own positional param, so existing two-arg callers like
+   * `api.delete(path, { silent: true })` keep working unchanged.
+   */
+  delete<T = void>(path: string, options?: DeleteOptions): Promise<T> {
+    const { body, ...rest } = options ?? {}
+    return request<T>(path, { ...rest, method: "DELETE", body })
   },
 
   /**

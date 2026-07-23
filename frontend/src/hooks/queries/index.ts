@@ -46,3 +46,24 @@ export {
 
 // Preferences
 export { usePreferences, useUpdatePreferences } from "./preferences"
+
+// Quick Entry (admin)
+export {
+  useQuickEntryList,
+  useQuickEntry,
+  useQuickEntryPoll,
+  useCoverageSearch,
+  useQuickEntryVersions,
+  useRestoreQuickEntryVersion,
+  useQuickEntryFeedback,
+  useCreateQuickEntry,
+  useUpdateQuickEntry,
+  useArchiveQuickEntry,
+  useConfirmCurrent,
+  useDeleteScreenshot,
+  useRetryScreenshotVision,
+  checkDuplicate,
+  suggestDocumentId,
+  validateReference,
+} from "./quickEntry"
+export type { QuickEntryListParams, QuickEntrySubmitPayload } from "./quickEntry"

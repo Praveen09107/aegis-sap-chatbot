@@ -122,6 +122,7 @@ export const ANALYTICS_RANGES = [
 export const ADMIN_NAV_ITEMS = [
   { label: "Dashboard", href: "/admin/dashboard", icon: "LayoutDashboard" },
   { label: "Documents", href: "/admin/documents", icon: "FileText" },
+  { label: "Quick Entry", href: "/admin/quick-entry", icon: "PenLine" },
   { label: "Registry", href: "/admin/registry", icon: "Link" },
   { label: "Config snapshot", href: "/admin/config-snapshot", icon: "Settings" },
   { label: "Knowledge gaps", href: "/admin/knowledge-gaps", icon: "Search" },
@@ -165,3 +166,64 @@ export const SAP_MODULES = {
   CO: "Controlling",
   BASIS: "SAP Basis",
 } as const
+
+// ── Quick Entry ──
+// Confirmed directly (2026-07-23, F19) against the real backend:
+// backend/app/handlers/knowledge_entries_handler.py's MODULES/CONTENT_TYPES,
+// backend/app/services/form_validator.py's CAUSE_PRIORITIES/
+// PROCEDURE_STEP_TYPES/CURRENT_VALUES_MODES, backend/app/config.py's
+// REVIEW_FREQUENCY_DAYS/SCREENSHOT_* constants.
+
+export const CONTENT_TYPE_LABELS: Record<"error_guide" | "procedure" | "config", string> = {
+  error_guide: "Error Guide",
+  procedure: "Procedure",
+  config: "Config Reference",
+}
+
+export const QUICK_ENTRY_STATUS_OPTIONS = [
+  { value: "", label: "All statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "active", label: "Active" },
+  { value: "processing", label: "Processing" },
+  { value: "review_required", label: "Review required" },
+  { value: "partial_index", label: "Partial index" },
+  { value: "failed", label: "Failed" },
+  { value: "low_quality", label: "Low quality" },
+] as const
+
+// REVIEW_FREQUENCY_DAYS on the backend: monthly=30, quarterly=90,
+// semi_annual=180, annual=365, as_needed=None (no automatic review date).
+export const REVIEW_FREQUENCY_OPTIONS = [
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly (every 3 months)" },
+  { value: "semi_annual", label: "Semi-annual (every 6 months)" },
+  { value: "annual", label: "Annual (once per year)" },
+  { value: "as_needed", label: "As-needed (no automatic review date)" },
+] as const
+
+export const CAUSE_PRIORITY_OPTIONS = [
+  { value: "check_first", label: "Check first", description: "Always try this before others" },
+  { value: "common", label: "Common", description: "Seen in most occurrences" },
+  { value: "less_common", label: "Less common", description: "Seen occasionally" },
+  { value: "rare", label: "Rare", description: "Edge case, check last" },
+] as const
+
+export const PROCEDURE_STEP_TYPE_OPTIONS = [
+  { value: "normal", label: "Normal step", description: "Standard sequential action" },
+  {
+    value: "admin_required",
+    label: "Requires IT admin",
+    description: "Step needs admin access — auto-prefixed with [Requires IT admin access] in chunk",
+  },
+  { value: "branch_start", label: "Branch: Condition start", description: "Marks the beginning of a conditional path (IF/WHEN)" },
+  { value: "branch_option_a", label: "Branch: Option A", description: "First option in the conditional" },
+  { value: "branch_option_b", label: "Branch: Option B", description: "Second option in the conditional" },
+  { value: "branch_end", label: "Branch: Condition end", description: "Marks the end of the conditional block" },
+] as const
+
+// Matches config.py exactly: SCREENSHOT_MAX_PER_CAUSE=3, SCREENSHOT_MAX_PER_STEP_BATCH=2,
+// SCREENSHOT_MAX_OVERALL=5 (overview/overall sections — error_overview, cfg_overview, cfg_values).
+export const SCREENSHOT_MAX_PER_CAUSE = 3
+export const SCREENSHOT_MAX_PER_STEP_BATCH = 2
+export const SCREENSHOT_MAX_OVERALL = 5
+export const SCREENSHOT_ACCEPTED_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"] as const

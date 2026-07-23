@@ -11,7 +11,7 @@ import { orgName, ADMIN_NAV_ITEMS, LAYOUT } from "@/lib/constants"
 import { LogOut } from "lucide-react"
 
 // Pages that get a "new" badge (added beyond original spec)
-const NEW_PAGES = new Set(["/admin/dashboard", "/admin/system-health", "/admin/analytics"])
+const NEW_PAGES = new Set(["/admin/dashboard", "/admin/system-health", "/admin/analytics", "/admin/quick-entry"])
 
 /**
  * Admin portal navigation sidebar.

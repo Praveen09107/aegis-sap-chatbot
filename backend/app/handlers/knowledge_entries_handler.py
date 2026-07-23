@@ -735,6 +735,25 @@ async def update_entry(id: str, request: Request, _admin: str = Depends(require_
                 new_review_frequency, new_next_review_date,
                 new_version, new_status, id,
             )
+            # Screenshots are stamped with the entry's CURRENT version at
+            # upload time (knowledge_screenshots_handler.py's upload_screenshot),
+            # but publishing always bumps the version — without carrying the
+            # screenshots forward, process_form_entry.py's chunk-linking query
+            # (`WHERE entry_id = $1 AND version = $2`, scoped to the NEW
+            # version) can never find them, so every screenshot uploaded
+            # during drafting is permanently orphaned the moment its entry is
+            # first published. Confirmed live (F19 residual manual check,
+            # DEC-063): a real employee query correctly cited the entry but
+            # attribution_panel.screenshots came back empty despite two real,
+            # vision-complete screenshots existing on it. Only the
+            # immediately-superseded version's screenshots are re-stamped —
+            # the same physical uploads are still the right ones for the
+            # content that just became the new current version.
+            await conn.execute(
+                """UPDATE knowledge_form_screenshots SET version = $1
+                   WHERE entry_id = $2::uuid AND version = $3""",
+                new_version, id, existing["version"],
+            )
         else:
             # Atomic check-and-update: the WHERE clause itself enforces the
             # lock, closing the TOCTOU window between the SELECT above and
@@ -910,6 +929,17 @@ async def restore_version(id: str, version: int, request: Request, _admin: str =
                WHERE id = $5::uuid""",
             target_form_data, target["verified_by_name"], target["verified_date"],
             new_version, id,
+        )
+
+        # Same carry-forward this session's publish path needed (see
+        # update_entry's DEC-063 comment) — restore also bumps the version
+        # and re-triggers process_form_entry.py's strict
+        # `WHERE version = $2` chunk-linking query, so without this the
+        # entry's current screenshots would be orphaned by every restore too.
+        await conn.execute(
+            """UPDATE knowledge_form_screenshots SET version = $1
+               WHERE entry_id = $2::uuid AND version = $3""",
+            new_version, id, entry["version"],
         )
 
         from app.infrastructure.redis_client import arq_client

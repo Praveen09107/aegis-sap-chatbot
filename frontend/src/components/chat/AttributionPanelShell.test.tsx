@@ -19,6 +19,8 @@ function makeAssistantMessage(overrides: Partial<ChatMessage> = {}): ChatMessage
       verified_date: "2026-07-01",
       secondary_sources: [],
       confidence_badge: "green",
+      form_entry_id: null,
+      screenshots: [],
     },
     ...overrides,
   }
@@ -67,6 +69,8 @@ describe("AttributionPanelShell", () => {
             verified_date: "2026-07-01",
             secondary_sources: [],
             confidence_badge: "green",
+            form_entry_id: null,
+            screenshots: [],
           },
         }),
         { id: "m2", role: "user", content: "follow up", timestamp: new Date() },

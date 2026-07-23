@@ -61,6 +61,11 @@ export default function ChatPage() {
             verified_date: "",
             secondary_sources: [],
             confidence_badge: (m.confidence_badge as ChatMessage["confidenceBadge"]) ?? null,
+            // Historical sessions load from GET /api/sessions/:id, which has
+            // no form_entry_id/screenshots data at all (a separate, still
+            // unbuilt backend feature per F18) — safe "none available" defaults.
+            form_entry_id: null,
+            screenshots: [],
           }
         : null,
     }))
